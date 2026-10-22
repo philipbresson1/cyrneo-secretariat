@@ -5,8 +5,8 @@
       "ES2023",
       "DOM"
     ],
-    "module": "esnext",
-    "moduleResolution": "bundler",
+    "module": "commonjs",
+    "moduleResolution": "node",
     "strict": true,
     "noEmit": true,
     "esModuleInterop": true,
