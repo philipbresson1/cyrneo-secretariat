@@ -1,7 +1,10 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["ES2023", "DOM"],
+    "lib": [
+      "ES2023",
+      "DOM"
+    ],
     "module": "esnext",
     "moduleResolution": "bundler",
     "strict": true,
@@ -10,7 +13,12 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "types": ["node"]
+    "types": [
+      "node"
+    ]
   },
-  "include": ["src/**/*.ts"]
+  "include": [
+    "src/**/*.ts",
+    "api/**/*.ts"
+  ]
 }

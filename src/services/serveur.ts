@@ -10,7 +10,7 @@ import http from 'node:http';
 import { randomUUID } from 'node:crypto';
 import type { Config, Intervention, StatutIntervention } from '../logique/types';
 import { LIBELLES_CATEGORIES, type Categorie } from '../logique/types';
-import { rdvDuJour, type Rdv } from '../lib/agenda';
+import { decalageParis, rdvDuJour, type Rdv } from '../lib/agenda';
 import { chercherJournal, interventionsOuvertes, majIntervention } from './stockage';
 
 export type Etat = { demarreLe: Date; dernierPassage: Date | null; erreurs: string[]; mode: string };
@@ -87,6 +87,16 @@ function page(titre: string, corps: string, rafraichir = 0): string {
 ${rafraichir ? `<meta http-equiv="refresh" content="${rafraichir}">` : ''}<title>${e(titre)}</title><style>${STYLE}</style></head><body>${corps}</body></html>`;
 }
 
+/** « 2026-10-23T09:00 » en heure de Paris, pour un champ datetime-local. */
+function heureParisPourChamp(d: Date): string {
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+      .formatToParts(d)
+      .map((x) => [x.type, x.value])
+  );
+  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`;
+}
+
 function nomSociete(config: Config, id: string | null): string {
   return config.societes.find((s) => s.id === id)?.nom ?? id ?? '';
 }
@@ -107,7 +117,16 @@ function listeRdv(rdvs: Rdv[]): string {
 }
 
 async function pageEcran(config: Config): Promise<string> {
-  const [inters, agendas] = await Promise.all([interventionsOuvertes(), lireAgendas(config)]);
+  // Base injoignable ou pas encore configurée : l'écran garde au moins les agendas.
+  let erreurBase = '';
+  const [inters, agendas] = await Promise.all([
+    interventionsOuvertes().catch((e: unknown) => {
+      console.error('[ecran]', e instanceof Error ? e.message : e);
+      erreurBase = 'Interventions indisponibles pour le moment';
+      return [] as Intervention[];
+    }),
+    lireAgendas(config),
+  ]);
   const aPlanifier = inters.filter((i) => i.statut === 'a_planifier' || i.statut === 'coordonnees_demandees');
   const planifiees = inters.filter((i) => i.statut === 'planifiee').sort((a, b) => (a.date_prevue ?? '').localeCompare(b.date_prevue ?? ''));
   const blocAgendas = agendas
@@ -115,7 +134,7 @@ async function pageEcran(config: Config): Promise<string> {
     .join('');
   const corps = `<div class="barre"><h1>Groupe CYRNEO · Planning</h1><div class="horloge" id="h"></div></div>
 <div class="grille"><div>
-<div class="carte"><h2>À planifier (${aPlanifier.length})</h2>${aPlanifier.map((i) => carteInter(config, i)).join('') || '<div class="vide">Tout est planifié 👍</div>'}</div>
+${erreurBase ? `<div class="carte erreur" style="margin-bottom:1.2rem">${e(erreurBase)}</div>` : ''}<div class="carte"><h2>À planifier (${aPlanifier.length})</h2>${aPlanifier.map((i) => carteInter(config, i)).join('') || '<div class="vide">Tout est planifié 👍</div>'}</div>
 <div class="carte" style="margin-top:1.2rem"><h2>Interventions planifiées (${planifiees.length})</h2>${planifiees.map((i) => carteInter(config, i)).join('') || '<div class="vide">Aucune</div>'}</div>
 </div><div class="carte"><h2>Agendas du jour</h2>${blocAgendas || '<div class="vide">Aucun agenda configuré</div>'}</div></div>
 <script>const h=document.getElementById('h');const t=()=>h.textContent=new Date().toLocaleString('fr-FR',{weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'});t();setInterval(t,15000)</script>`;
@@ -132,7 +151,7 @@ async function pageInterventions(config: Config): Promise<string> {
     (Object.keys(STATUTS) as StatutIntervention[]).map((s) => `<option value="${s}" ${s === actuel ? 'selected' : ''}>${STATUTS[s]}</option>`).join('');
   const lignes = inters
     .map((i) => {
-      const prevue = i.date_prevue ? new Date(new Date(i.date_prevue).getTime() - new Date(i.date_prevue).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '';
+      const prevue = i.date_prevue ? heureParisPourChamp(new Date(i.date_prevue)) : '';
       return `<tr><td>${i.urgence === 'urgente' ? '🚨 ' : ''}${e(i.reference)}<br><span class="vide">${e(fmtComplet.format(new Date(i.cree_le)))}</span></td>
 <td>${e(nomSociete(config, i.societe))}</td><td>${e(i.client_nom)}<br>${e(i.client_telephone)}<br><span class="vide">${e(i.client_email)}</span></td>
 <td>${e([i.adresse, i.commune].filter(Boolean).join(', '))}</td><td>${e(i.nature)}<br><span class="vide">${e(i.resume)}</span></td>
@@ -176,54 +195,58 @@ function lireCorps(req: http.IncomingMessage): Promise<URLSearchParams> {
   });
 }
 
+/** Traite une requête. Partagé entre le serveur du PC et la fonction Vercel (Cyrnehome). */
+export async function gererRequete(req: http.IncomingMessage, res: http.ServerResponse, config: Config, etat: Etat | null, cle: string): Promise<void> {
+  const url = new URL(req.url ?? '/', 'http://local');
+  const envoyer = (code: number, html: string, entetes: Record<string, string> = {}) => {
+    res.writeHead(code, { 'Content-Type': 'text/html; charset=utf-8', ...entetes });
+    res.end(html);
+  };
+  try {
+    const cookie = /(?:^|;\s*)secretariat=([^;]+)/.exec(req.headers.cookie ?? '')?.[1];
+    const autorise = cookie === cle || url.searchParams.get('cle') === cle;
+    const entetesCle: Record<string, string> = url.searchParams.get('cle') === cle ? { 'Set-Cookie': `secretariat=${cle}; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000` } : {};
+
+    if (url.pathname === '/' || url.pathname === '/ecran') {
+      if (!config.serveur.ecranPublic && !autorise) return envoyer(401, page('Accès', '<p style="padding:2rem">Clé requise.</p>'));
+      return envoyer(200, await pageEcran(config), entetesCle);
+    }
+    if (url.pathname === '/etat') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(etat ?? { mode: 'en ligne' }));
+      return;
+    }
+    if (!autorise) return envoyer(401, page('Accès', '<p style="padding:2rem">Clé requise : ouvrez cette page avec ?cle=… une première fois.</p>'));
+
+    if (url.pathname === '/interventions' && req.method === 'GET') return envoyer(200, await pageInterventions(config), entetesCle);
+    const m = /^\/interventions\/(\d+)$/.exec(url.pathname);
+    if (m && req.method === 'POST') {
+      const f = await lireCorps(req);
+      const statut = f.get('statut') as StatutIntervention;
+      if (!(statut in STATUTS)) return envoyer(400, page('Erreur', 'Statut inconnu'));
+      const date = f.get('date_prevue');
+      await majIntervention(Number(m[1]), {
+        statut,
+        // Le champ datetime-local est une heure de Paris, quel que soit le fuseau du serveur.
+        date_prevue: date ? new Date(`${date}:00${decalageParis(new Date(`${date}:00Z`))}`).toISOString() : null,
+        intervenant: f.get('intervenant')?.trim() || null,
+      });
+      res.writeHead(303, { Location: '/interventions' });
+      res.end();
+      return;
+    }
+    if (url.pathname === '/journal') return envoyer(200, await pageJournal(config, url.searchParams.get('q') ?? ''), entetesCle);
+    return envoyer(404, page('Introuvable', '<p style="padding:2rem">Page introuvable.</p>'));
+  } catch (err) {
+    console.error('[serveur]', err instanceof Error ? err.message : err);
+    return envoyer(500, page('Erreur', '<p style="padding:2rem">Erreur interne, voir le journal.</p>'));
+  }
+}
+
 export function demarrerServeur(config: Config, etat: Etat): http.Server {
   const cle = process.env.SECRETARIAT_CLE || randomUUID();
   if (!process.env.SECRETARIAT_CLE) console.log(`[serveur] SECRETARIAT_CLE absente : clé provisoire ${cle}`);
-
-  const serveur = http.createServer(async (req, res) => {
-    const url = new URL(req.url ?? '/', 'http://local');
-    const envoyer = (code: number, html: string, entetes: Record<string, string> = {}) => {
-      res.writeHead(code, { 'Content-Type': 'text/html; charset=utf-8', ...entetes });
-      res.end(html);
-    };
-    try {
-      const cookie = /(?:^|;\s*)secretariat=([^;]+)/.exec(req.headers.cookie ?? '')?.[1];
-      const autorise = cookie === cle || url.searchParams.get('cle') === cle;
-      const entetesCle: Record<string, string> = url.searchParams.get('cle') === cle ? { 'Set-Cookie': `secretariat=${cle}; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000` } : {};
-
-      if (url.pathname === '/' || url.pathname === '/ecran') {
-        if (!config.serveur.ecranPublic && !autorise) return envoyer(401, page('Accès', '<p style="padding:2rem">Clé requise.</p>'));
-        return envoyer(200, await pageEcran(config), entetesCle);
-      }
-      if (url.pathname === '/etat') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify(etat));
-      }
-      if (!autorise) return envoyer(401, page('Accès', '<p style="padding:2rem">Clé requise : ouvrez cette page avec ?cle=… une première fois.</p>'));
-
-      if (url.pathname === '/interventions' && req.method === 'GET') return envoyer(200, await pageInterventions(config), entetesCle);
-      const m = /^\/interventions\/(\d+)$/.exec(url.pathname);
-      if (m && req.method === 'POST') {
-        const f = await lireCorps(req);
-        const statut = f.get('statut') as StatutIntervention;
-        if (!(statut in STATUTS)) return envoyer(400, page('Erreur', 'Statut inconnu'));
-        const date = f.get('date_prevue');
-        await majIntervention(Number(m[1]), {
-          statut,
-          // Le champ datetime-local est en heure du PC (Paris) : new Date() l'interprète ainsi.
-          date_prevue: date ? new Date(date).toISOString() : null,
-          intervenant: f.get('intervenant')?.trim() || null,
-        });
-        res.writeHead(303, { Location: '/interventions' });
-        return res.end();
-      }
-      if (url.pathname === '/journal') return envoyer(200, await pageJournal(config, url.searchParams.get('q') ?? ''), entetesCle);
-      return envoyer(404, page('Introuvable', '<p style="padding:2rem">Page introuvable.</p>'));
-    } catch (err) {
-      console.error('[serveur]', err instanceof Error ? err.message : err);
-      return envoyer(500, page('Erreur', '<p style="padding:2rem">Erreur interne, voir le journal du PC.</p>'));
-    }
-  });
+  const serveur = http.createServer((req, res) => void gererRequete(req, res, config, etat, cle));
   serveur.listen(config.serveur.port, '0.0.0.0', () => {
     console.log(`[serveur] écran d'accueil : http://<ce-PC>:${config.serveur.port}/ecran`);
   });
