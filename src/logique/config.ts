@@ -53,6 +53,7 @@ export function validerConfig(brut: unknown): Config {
   for (const s of c.societes ?? []) s.telephone ||= numeroGroupe;
 
   if (erreurs.length > 0) throw new Error('config.json invalide :\n  - ' + erreurs.join('\n  - '));
-  c.domainesInternes = c.domainesInternes.map((d) => d.toLowerCase());
+  // Les boîtes lues sont internes d'office : jamais de réponse automatique entre elles.
+  c.domainesInternes = [...new Set([...c.domainesInternes, ...c.boites.map((b) => b.adresse)].map((d) => d.toLowerCase()))];
   return c;
 }

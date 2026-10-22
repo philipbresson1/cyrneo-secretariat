@@ -4,7 +4,7 @@ Un démon qui tourne en continu sur le PC du bureau et fait le travail de tri du
 
 Toutes les 2 minutes, il :
 
-1. lit **tous** les nouveaux mails de chaque boîte (IMAP OVH, en lecture seule : rien n'est marqué lu ni déplacé) ;
+1. lit **tous** les nouveaux mails de chaque boîte (IMAP Gmail ou OVH, en lecture seule : rien n'est marqué lu ni déplacé) ;
 2. les fait trier par Claude : demande d'intervention, devis, facture reçue, relance, administratif, pub… et la société concernée ;
 3. agit :
    - **demande d'intervention ou de devis** → fiche créée (`INT-2026-0042` / `DEV-…`), message dans la bulle Rainbow de la société, puis mail automatique au client :
@@ -53,13 +53,14 @@ copy .env.example .env.local
 copy config.exemple.json config.json
 ```
 
-1. **Supabase** : exécuter `supabase/schema.sql` dans le SQL Editor du projet Jarvis (une seule fois).
-2. **`.env.local`** : boîtes mail, Claude, Supabase, Rainbow, `SECRETARIAT_CLE`, agendas.
-3. **`config.json`** : boîtes, sociétés (téléphones, noms exacts des bulles Rainbow), transferts, dossiers.
-4. Vérifier Rainbow : `npm start -- bulles`.
-5. Essai à blanc sur un mail enregistré (`.eml`) : `npm start -- essai C:\...\mail.eml`.
-6. Premier passage : `npm start -- une-fois`, puis `http://localhost:3939/journal?cle=…`.
-7. Démarrage automatique H24 (PowerShell administrateur) : `powershell -File scripts/installer.ps1`.
+1. **Supabase** : exécuter `supabase/schema.sql` dans le SQL Editor du projet Supabase « Secretariat » (une seule fois).
+2. **Boîtes Gmail** : sur chaque compte, activer la validation en deux étapes puis créer un « mot de passe d'application » (Compte Google > Sécurité). C'est lui qui va dans `.env.local`, pas le mot de passe du compte.
+3. **`.env.local`** : boîtes mail, Claude, Supabase, Rainbow, `SECRETARIAT_CLE`, agendas.
+4. **`config.json`** : boîtes, sociétés (téléphones, noms exacts des bulles Rainbow), transferts, dossiers.
+5. Vérifier Rainbow : `npm start -- bulles`.
+6. Essai à blanc sur un mail enregistré (`.eml`) : `npm start -- essai C:\...\mail.eml`.
+7. Premier passage : `npm start -- une-fois`, puis `http://localhost:3939/journal?cle=…`.
+8. Démarrage automatique H24 (PowerShell administrateur) : `powershell -File scripts/installer.ps1`.
 
 Mise à jour : `git pull` puis `npm install`. Journal du démon : `secretariat.log`.
 
@@ -106,13 +107,12 @@ src/
 │  ├─ garde-fous       quand ne PAS répondre
 │  └─ telephone        numéros français
 ├─ services/           imap, smtp, rainbow, classifieur, stockage (Supabase), fichiers, rapport-excel, serveur
-└─ lib/                agenda iCal et client Supabase (repris de Jarvis)
+└─ lib/                agenda iCal et client Supabase
 ```
 
-Les données (journal, interventions) vont dans le projet Supabase de Jarvis : le dashboard pourra les afficher.
+Les données (journal, interventions) vont dans un projet Supabase dédié, « Secretariat ».
 
 ## Prochaines étapes
 
 - **Dolibarr** : créer le bon d'intervention du jour dans la bonne société (colonne `interventions.dolibarr_ref` déjà prévue), puis pousser les factures du dossier « à saisir ».
-- Encart « Secrétariat » dans le dashboard Jarvis (les tables sont déjà lisibles par le compte connecté).
 - Destinataires des transferts par société et par type, à définir ensemble.

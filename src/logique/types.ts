@@ -73,7 +73,7 @@ export type Config = {
   mode: Mode;
   intervalleMinutes: number;
   repriseHeures: number; // au tout premier passage, ne traite que les mails de moins de N heures
-  domainesInternes: string[];
+  domainesInternes: string[]; // domaines ou adresses complètes du groupe
   boites: Boite[];
   societes: Societe[];
   transferts: RegleTransfert[];

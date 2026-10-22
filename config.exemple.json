@@ -3,7 +3,6 @@
   "intervalleMinutes": 2,
   "repriseHeures": 24,
   "modele": "claude-opus-5-5",
-
   "domainesInternes": [
     "groupecyrneo.com",
     "sud-assainissement-ajaccio.com",
@@ -13,24 +12,53 @@
     "corse3d.fr",
     "entretienetcouleurs.com"
   ],
-
   "boites": [
     {
-      "id": "groupecyrneo",
-      "adresse": "info@groupecyrneo.com",
-      "utilisateurEnv": "MAIL_CYRNEO_UTILISATEUR",
-      "motDePasseEnv": "MAIL_CYRNEO_MOTDEPASSE",
-      "societeParDefaut": "cyrneo"
+      "id": "debouchage-sa",
+      "adresse": "debouchagesudassai@gmail.com",
+      "utilisateurEnv": "MAIL_DEBOUCHAGE_SA_UTILISATEUR",
+      "motDePasseEnv": "MAIL_DEBOUCHAGE_SA_MOTDEPASSE",
+      "societeParDefaut": "sud-assainissement",
+      "imap": { "hote": "imap.gmail.com", "port": 993 },
+      "smtp": { "hote": "smtp.gmail.com", "port": 465 }
     },
     {
-      "id": "sud-assainissement",
-      "adresse": "contact@sud-assainissement-ajaccio.com",
-      "utilisateurEnv": "MAIL_SUDASSAI_UTILISATEUR",
-      "motDePasseEnv": "MAIL_SUDASSAI_MOTDEPASSE",
-      "societeParDefaut": "sud-assainissement"
+      "id": "agent-sa",
+      "adresse": "agent.sudassai@gmail.com",
+      "utilisateurEnv": "MAIL_AGENT_SA_UTILISATEUR",
+      "motDePasseEnv": "MAIL_AGENT_SA_MOTDEPASSE",
+      "societeParDefaut": "sud-assainissement",
+      "imap": { "hote": "imap.gmail.com", "port": 993 },
+      "smtp": { "hote": "smtp.gmail.com", "port": 465 }
+    },
+    {
+      "id": "agent-ms2a",
+      "adresse": "agent.ms2a@gmail.com",
+      "utilisateurEnv": "MAIL_AGENT_MS2A_UTILISATEUR",
+      "motDePasseEnv": "MAIL_AGENT_MS2A_MOTDEPASSE",
+      "societeParDefaut": "multiservices-2a",
+      "imap": { "hote": "imap.gmail.com", "port": 993 },
+      "smtp": { "hote": "smtp.gmail.com", "port": 465 }
+    },
+    {
+      "id": "entretien-couleurs",
+      "adresse": "entretienetcouleurs@gmail.com",
+      "utilisateurEnv": "MAIL_ENTRETIEN_COULEURS_UTILISATEUR",
+      "motDePasseEnv": "MAIL_ENTRETIEN_COULEURS_MOTDEPASSE",
+      "societeParDefaut": "entretien-couleurs",
+      "imap": { "hote": "imap.gmail.com", "port": 993 },
+      "smtp": { "hote": "smtp.gmail.com", "port": 465 }
+    },
+    {
+      "id": "sud-travaux",
+      "adresse": "sas.sudtravaux@gmail.com",
+      "utilisateurEnv": "MAIL_SUD_TRAVAUX_UTILISATEUR",
+      "motDePasseEnv": "MAIL_SUD_TRAVAUX_MOTDEPASSE",
+      "societeParDefaut": "sud-travaux",
+      "imap": { "hote": "imap.gmail.com", "port": 993 },
+      "smtp": { "hote": "smtp.gmail.com", "port": 465 }
     }
   ],
-
   "societes": [
     {
       "id": "cyrneo",
@@ -110,9 +138,7 @@
       "alerteSecours": []
     }
   ],
-
   "transferts": [],
-
   "agendas": [
     { "nom": "Débouchage Sud Assainissement", "icsEnv": "AGENDA_ICS_DEBOUCHAGE_SA", "couleur": "#ef4444" },
     { "nom": "Agent Sud Assainissement", "icsEnv": "AGENDA_ICS_AGENT_SA", "couleur": "#2563eb" },
@@ -120,15 +146,20 @@
     { "nom": "Entretien et Couleurs", "icsEnv": "AGENDA_ICS_ENTRETIEN_COULEURS", "couleur": "#f59e0b" },
     { "nom": "Sud Travaux", "icsEnv": "AGENDA_ICS_SUD_TRAVAUX", "couleur": "#a855f7" }
   ],
-
   "dossiers": {
     "factures": "C:/Cyrneo/Factures a saisir",
     "rapports": "C:/Cyrneo/Rapports secretariat"
   },
-
-  "rapport": { "heure": "19:00", "destinataires": [] },
-
-  "test": { "bulleRainbow": "Test secrétariat", "adresse": "votre-adresse-de-test@exemple.fr" },
-
-  "serveur": { "port": 3939, "ecranPublic": true }
+  "rapport": {
+    "heure": "19:00",
+    "destinataires": []
+  },
+  "test": {
+    "bulleRainbow": "Test secrétariat",
+    "adresse": "votre-adresse-de-test@exemple.fr"
+  },
+  "serveur": {
+    "port": 3939,
+    "ecranPublic": true
+  }
 }

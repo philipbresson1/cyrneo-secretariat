@@ -27,9 +27,15 @@ export function domaine(adresse: string): string {
   return adresse.split('@')[1]?.toLowerCase().trim() ?? '';
 }
 
-export function estInterne(adresse: string, domainesInternes: string[]): boolean {
-  const d = domaine(adresse);
-  return domainesInternes.some((i) => d === i.toLowerCase() || d.endsWith('.' + i.toLowerCase()));
+/** `internes` mélange des domaines (groupecyrneo.com) et des adresses complètes
+ *  (agent.sudassai@gmail.com) : une boîte Gmail ne rend pas tout gmail.com interne. */
+export function estInterne(adresse: string, internes: string[]): boolean {
+  const a = adresse.toLowerCase().trim();
+  const d = domaine(a);
+  return internes.some((i) => {
+    const x = i.toLowerCase();
+    return x.includes('@') ? a === x : d === x || d.endsWith('.' + x);
+  });
 }
 
 export function estRobot(adresse: string): boolean {

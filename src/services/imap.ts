@@ -1,5 +1,5 @@
 /**
- * Lecture IMAP des boîtes OVH. Lecture seule stricte : aucun mail n'est marqué lu,
+ * Lecture IMAP des boîtes (OVH par défaut, Gmail via imap.gmail.com). Lecture seule stricte : aucun mail n'est marqué lu,
  * déplacé ou supprimé. La reprise se fait par UID, mémorisé dans Supabase.
  */
 import { ImapFlow } from 'imapflow';

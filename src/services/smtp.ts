@@ -1,5 +1,5 @@
 /**
- * Envoi des mails du secrétariat par le SMTP OVH de la boîte qui a reçu le mail :
+ * Envoi des mails du secrétariat par le SMTP de la boîte qui a reçu le mail :
  * le client reçoit la réponse de l'adresse à laquelle il a écrit.
  */
 import nodemailer, { type Transporter } from 'nodemailer';
