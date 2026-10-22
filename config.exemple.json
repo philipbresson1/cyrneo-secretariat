@@ -14,6 +14,20 @@
   ],
   "boites": [
     {
+      "id": "info-cyrneo",
+      "adresse": "info@groupecyrneo.com",
+      "utilisateurEnv": "MAIL_INFO_CYRNEO_UTILISATEUR",
+      "motDePasseEnv": "MAIL_INFO_CYRNEO_MOTDEPASSE",
+      "societeParDefaut": "cyrneo"
+    },
+    {
+      "id": "facturation-cyrneo",
+      "adresse": "facturation@groupecyrneo.com",
+      "utilisateurEnv": "MAIL_FACTURATION_CYRNEO_UTILISATEUR",
+      "motDePasseEnv": "MAIL_FACTURATION_CYRNEO_MOTDEPASSE",
+      "societeParDefaut": "cyrneo"
+    },
+    {
       "id": "debouchage-sa",
       "adresse": "debouchagesudassai@gmail.com",
       "utilisateurEnv": "MAIL_DEBOUCHAGE_SA_UTILISATEUR",
