@@ -1,0 +1,30 @@
+{
+  "name": "cyrneo-secretariat",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Secrétariat CYRNEO : tri des mails, Rainbow, réponses automatiques, journal, Excel, écran d'accueil. Tourne H24 sur le PC du bureau.",
+  "scripts": {
+    "start": "tsx src/demon.ts",
+    "test": "vitest run",
+    "types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.120.0",
+    "@supabase/supabase-js": "^2.112.4",
+    "imapflow": "^1.7.6",
+    "node-ical": "^0.27.1",
+    "exceljs": "^4.4.0",
+    "mailparser": "^3.12.2",
+    "nodemailer": "^7.0.13",
+    "rainbow-node-sdk": "2.42.0-lts.10",
+    "dotenv": "^16.6.1",
+    "tsx": "^4.23.12"
+  },
+  "devDependencies": {
+    "@types/mailparser": "^3.4.6",
+    "@types/nodemailer": "^7.0.1",
+    "@types/node": "^20",
+    "typescript": "^5",
+    "vitest": "^4.1.11"
+  }
+}

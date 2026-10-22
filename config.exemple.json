@@ -1,0 +1,134 @@
+{
+  "mode": "simulation",
+  "intervalleMinutes": 2,
+  "repriseHeures": 24,
+  "modele": "claude-opus-5-5",
+
+  "domainesInternes": [
+    "groupecyrneo.com",
+    "sud-assainissement-ajaccio.com",
+    "sudtravaux.com",
+    "sottec.fr",
+    "multiservices2a2b.fr",
+    "corse3d.fr",
+    "entretienetcouleurs.com"
+  ],
+
+  "boites": [
+    {
+      "id": "groupecyrneo",
+      "adresse": "info@groupecyrneo.com",
+      "utilisateurEnv": "MAIL_CYRNEO_UTILISATEUR",
+      "motDePasseEnv": "MAIL_CYRNEO_MOTDEPASSE",
+      "societeParDefaut": "cyrneo"
+    },
+    {
+      "id": "sud-assainissement",
+      "adresse": "contact@sud-assainissement-ajaccio.com",
+      "utilisateurEnv": "MAIL_SUDASSAI_UTILISATEUR",
+      "motDePasseEnv": "MAIL_SUDASSAI_MOTDEPASSE",
+      "societeParDefaut": "sud-assainissement"
+    }
+  ],
+
+  "societes": [
+    {
+      "id": "cyrneo",
+      "nom": "Groupe CYRNEO",
+      "metier": "holding, accueil commun du groupe",
+      "telephone": "04 95 23 02 84",
+      "site": "www.groupecyrneo.com",
+      "bulleRainbow": "Accueil CYRNEO",
+      "delaiRappel": "dans la journée",
+      "delaiDevis": "sous 48 h",
+      "alerteSecours": []
+    },
+    {
+      "id": "sud-assainissement",
+      "nom": "Sud Assainissement",
+      "metier": "vidange de fosses, débouchage, hydrocurage, inspection caméra, bacs à graisse, contrats d'entretien",
+      "telephone": "04 95 23 02 84",
+      "site": "www.sud-assainissement-ajaccio.com",
+      "bulleRainbow": "Sud Assainissement - Interventions",
+      "delaiRappel": "dans la journée",
+      "delaiDevis": "sous 48 h",
+      "alerteSecours": []
+    },
+    {
+      "id": "sud-travaux",
+      "nom": "Sud Travaux",
+      "metier": "VRD, terrassement, pose de fosses et de micro-stations",
+      "telephone": "",
+      "site": "www.sudtravaux.com",
+      "bulleRainbow": "Sud Travaux",
+      "delaiRappel": "sous 24 h",
+      "delaiDevis": "dans la semaine",
+      "alerteSecours": []
+    },
+    {
+      "id": "sottec",
+      "nom": "SOTTEC",
+      "metier": "stockage et traitement des eaux",
+      "telephone": "",
+      "site": "www.sottec.fr",
+      "bulleRainbow": "SOTTEC",
+      "delaiRappel": "sous 24 h",
+      "delaiDevis": "sous 48 h",
+      "alerteSecours": []
+    },
+    {
+      "id": "corse-3d",
+      "nom": "Corse 3D",
+      "metier": "dératisation, désinsectisation, désinfection",
+      "telephone": "",
+      "site": "www.corse3d.fr",
+      "bulleRainbow": "Corse 3D",
+      "delaiRappel": "dans la journée",
+      "delaiDevis": "sous 48 h",
+      "alerteSecours": []
+    },
+    {
+      "id": "multiservices-2a",
+      "nom": "Multiservices 2A",
+      "metier": "nettoyage, entretien de copropriétés, espaces verts",
+      "telephone": "",
+      "site": "www.multiservices2a2b.fr",
+      "bulleRainbow": "Multiservices 2A",
+      "delaiRappel": "sous 24 h",
+      "delaiDevis": "sous 48 h",
+      "alerteSecours": []
+    },
+    {
+      "id": "entretien-couleurs",
+      "nom": "Entretien et Couleurs",
+      "metier": "second œuvre : placo, peinture, sols",
+      "telephone": "",
+      "site": "www.entretienetcouleurs.com",
+      "bulleRainbow": "Entretien et Couleurs",
+      "delaiRappel": "sous 24 h",
+      "delaiDevis": "dans la semaine",
+      "alerteSecours": []
+    }
+  ],
+
+  "transferts": [],
+
+  "agendas": [
+    { "nom": "Débouchage Sud Assainissement", "icsEnv": "AGENDA_ICS_DEBOUCHAGE_SA", "couleur": "#ef4444" },
+    { "nom": "Agent Sud Assainissement", "icsEnv": "AGENDA_ICS_AGENT_SA", "couleur": "#2563eb" },
+    { "nom": "Agent Multiservices 2A", "icsEnv": "AGENDA_ICS_AGENT_MS2A", "couleur": "#16a34a" },
+    { "nom": "Entretien et Couleurs", "icsEnv": "AGENDA_ICS_ENTRETIEN_COULEURS", "couleur": "#f59e0b" },
+    { "nom": "Sud Travaux", "icsEnv": "AGENDA_ICS_SUD_TRAVAUX", "couleur": "#a855f7" }
+  ],
+
+  "dossiers": {
+    "factures": "C:/Cyrneo/Factures a saisir",
+    "rapports": "C:/Cyrneo/Rapports secretariat"
+  },
+
+  "rapport": { "heure": "19:00", "destinataires": [] },
+
+  "test": { "bulleRainbow": "Test secrétariat", "adresse": "votre-adresse-de-test@exemple.fr" },
+
+  "serveur": { "port": 3939, "ecranPublic": true }
+}
