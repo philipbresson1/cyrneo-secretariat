@@ -1,4 +1,4 @@
--- 0004_secretariat.sql — démon de secrétariat (secretariat/)
+-- schema.sql — tables du secrétariat, dans le projet Supabase de Jarvis
 
 -- Historique complet : une ligne par mail lu, quoi qu'il en soit advenu.
 create table secretariat_journal (
@@ -79,9 +79,14 @@ alter table interventions enable row level security;
 alter table secretariat_envois enable row level security;
 alter table secretariat_curseurs enable row level security;
 
--- Lecture depuis le dashboard Jarvis ; écriture par le démon (service-role) uniquement,
--- sauf le suivi des interventions que l'on peut mettre à jour depuis le dashboard.
-create policy lecture_journal on secretariat_journal for select to authenticated using (true);
-create policy lecture_interventions on interventions for select to authenticated using (true);
-create policy maj_interventions on interventions for update to authenticated using (true) with check (true);
-create policy lecture_envois on secretariat_envois for select to authenticated using (true);
+-- Lecture depuis le dashboard Jarvis (compte de Philip uniquement, comme 0002 de Jarvis) ;
+-- écriture par le démon (service-role), sauf le suivi des interventions modifiable depuis le dashboard.
+create policy lecture_journal on secretariat_journal for select to authenticated
+  using ((select auth.jwt() ->> 'email') = 'philip.bresson1@gmail.com');
+create policy lecture_interventions on interventions for select to authenticated
+  using ((select auth.jwt() ->> 'email') = 'philip.bresson1@gmail.com');
+create policy maj_interventions on interventions for update to authenticated
+  using ((select auth.jwt() ->> 'email') = 'philip.bresson1@gmail.com')
+  with check ((select auth.jwt() ->> 'email') = 'philip.bresson1@gmail.com');
+create policy lecture_envois on secretariat_envois for select to authenticated
+  using ((select auth.jwt() ->> 'email') = 'philip.bresson1@gmail.com');

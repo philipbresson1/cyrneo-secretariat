@@ -172,6 +172,9 @@ describe('config', () => {
   it("l'exemple est valide et démarre en simulation", () => {
     expect(config.mode).toBe('simulation');
   });
+  it('donne le numéro du groupe aux sociétés sans téléphone', () => {
+    expect(config.societes.find((s) => s.id === 'sud-travaux')!.telephone).toBe('04 95 23 02 84');
+  });
   it('signale une société par défaut inconnue', () => {
     expect(() => validerConfig({ ...exemple, boites: [{ ...exemple.boites[0], societeParDefaut: 'x' }] })).toThrow(/societeParDefaut/);
   });

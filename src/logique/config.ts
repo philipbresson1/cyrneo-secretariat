@@ -47,6 +47,11 @@ export function validerConfig(brut: unknown): Config {
   }
   if (!/^\d{1,2}:\d{2}$/.test(c.rapport.heure)) erreurs.push('rapport.heure au format HH:MM');
 
+  // Société sans numéro : les mails clients donnent celui du groupe, jamais un trou.
+  const numeroGroupe = (c.societes ?? []).find((s) => s.telephone)?.telephone ?? '';
+  if (!numeroGroupe) erreurs.push('au moins une société doit avoir un téléphone');
+  for (const s of c.societes ?? []) s.telephone ||= numeroGroupe;
+
   if (erreurs.length > 0) throw new Error('config.json invalide :\n  - ' + erreurs.join('\n  - '));
   c.domainesInternes = c.domainesInternes.map((d) => d.toLowerCase());
   return c;
