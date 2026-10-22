@@ -172,6 +172,19 @@
     "bulleRainbow": "Test secrétariat",
     "adresse": "votre-adresse-de-test@exemple.fr"
   },
+  "dolibarr": {
+    "actif": false,
+    "url": "https://dolibarr.groupecyrneo.com",
+    "entites": {
+      "cyrneo": 1,
+      "sud-assainissement": 2,
+      "sud-travaux": 3,
+      "sottec": 4,
+      "multiservices-2a": 5,
+      "entretien-couleurs": 6
+    }
+  },
+
   "serveur": {
     "port": 3939,
     "ecranPublic": true

@@ -145,6 +145,24 @@ describe('décision', () => {
     expect(actions).toEqual([{ type: 'classer_pieces_jointes' }, { type: 'transferer', vers: ['compta@exemple.fr'] }]);
   });
 
+  it('Dolibarr actif : bon créé seulement quand on peut joindre le client', () => {
+    const cfg = { ...config, dolibarr: { actif: true, url: 'https://d.fr', entites: { 'sud-assainissement': 2 } } };
+    expect(decider(mail(), classification(), ctx({ config: cfg })).map((a) => a.type)).toContain('bon_dolibarr');
+    const sansTel = classification({ contact: { ...classification().contact, telephone: '' } });
+    expect(decider(mail(), sansTel, ctx({ config: cfg })).map((a) => a.type)).not.toContain('bon_dolibarr');
+    // Société sans entité Dolibarr, ou devis : pas de bon.
+    expect(decider(mail(), classification({ societe: 'sottec' }), ctx({ config: cfg })).map((a) => a.type)).not.toContain('bon_dolibarr');
+    expect(decider(mail(), classification({ categorie: 'demande_devis' }), ctx({ config: cfg })).map((a) => a.type)).not.toContain('bon_dolibarr');
+    // Dolibarr inactif (exemple) : jamais de bon.
+    expect(decider(mail(), classification(), ctx()).map((a) => a.type)).not.toContain('bon_dolibarr');
+  });
+
+  it('Dolibarr : le bon part quand le client complète ses coordonnées', () => {
+    const cfg = { ...config, dolibarr: { actif: true, url: 'https://d.fr', entites: { 'sud-assainissement': 2 } } };
+    const liee = { id: 7, type: 'intervention', societe: 'sud-assainissement', client_telephone: '', adresse: '12 route', commune: 'Porticcio', client_nom: 'Jean', client_email: '', nature: 'vidange', dolibarr_ref: null } as Intervention;
+    expect(decider(mail(), classification(), ctx({ config: cfg, interventionLiee: liee })).map((a) => a.type)).toContain('bon_dolibarr');
+  });
+
   it('publicité : rien à faire', () => {
     expect(decider(mail(), classification({ categorie: 'publicite' }), ctx())).toEqual([]);
   });

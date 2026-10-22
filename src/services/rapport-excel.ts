@@ -62,6 +62,7 @@ const COLONNES_INTER = [
   { header: 'Prévue le', key: 'date_prevue', width: 17 },
   { header: 'Intervenant', key: 'intervenant', width: 16 },
   { header: 'Résumé', key: 'resume', width: 50 },
+  { header: 'Bon Dolibarr', key: 'dolibarr_ref', width: 16 },
 ];
 
 function ligneInter(config: Config, i: Intervention) {

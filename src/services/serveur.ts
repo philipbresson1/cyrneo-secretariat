@@ -106,7 +106,7 @@ function carteInter(config: Config, i: Intervention): string {
   const lieu = [i.adresse, i.commune].filter(Boolean).join(', ');
   const quand = i.date_prevue ? `${fmtJour.format(new Date(i.date_prevue))} ${fmtHeure.format(new Date(i.date_prevue))}` : i.date_souhaitee ? `souhaité : ${i.date_souhaitee}` : '';
   return `<div class="inter ${classe}"><div class="haut"><span>${i.urgence === 'urgente' ? '🚨 ' : ''}${e(i.client_nom || 'Client')} — ${e(i.nature || i.resume)}</span><span>${e(quand)}</span></div>
-<div class="bas"><span class="etiquette">${e(nomSociete(config, i.societe))}</span><span class="etiquette">${e(STATUTS[i.statut])}</span>${e(lieu)}${i.intervenant ? ` · 👷 ${e(i.intervenant)}` : ''} · ${e(i.reference)}</div></div>`;
+<div class="bas"><span class="etiquette">${e(nomSociete(config, i.societe))}</span><span class="etiquette">${e(STATUTS[i.statut])}</span>${e(lieu)}${i.intervenant ? ` · 👷 ${e(i.intervenant)}` : ''} · ${e(i.reference)}${i.dolibarr_ref ? ` · Dolibarr ${e(i.dolibarr_ref)}` : ''}</div></div>`;
 }
 
 function listeRdv(rdvs: Rdv[]): string {

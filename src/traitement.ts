@@ -17,6 +17,7 @@ import { classer } from './services/classifieur';
 import { envoyer } from './services/smtp';
 import { publier } from './services/rainbow';
 import { classerPiecesJointes } from './services/fichiers';
+import { creerBonIntervention, entiteDe, trouverOuCreerClient } from './services/dolibarr';
 import * as db from './services/stockage';
 
 export type Bilan = { statut: 'traite' | 'rien_a_faire' | 'simulation' | 'erreur'; resume: string };
@@ -141,6 +142,19 @@ export async function traiterMail(mail: MailRecu, boite: Boite, config: Config):
         } catch (e) {
           faites.push({ action: a.type, detail: `ÉCHEC : ${e instanceof Error ? e.message : String(e)}`, ok: false, simulee: false });
         }
+        break;
+      }
+      case 'bon_dolibarr': {
+        if (!intervention) break;
+        const inter = intervention;
+        // Dolibarr n'a pas de bac à sable : rien n'y est écrit hors du mode réel.
+        await executer('bon_dolibarr', config.mode !== 'reel', `bon d'intervention ${s.nom}`, async () => {
+          const entite = entiteDe(config, inter.societe);
+          const client = await trouverOuCreerClient(config, entite, classification);
+          const bon = await creerBonIntervention(config, entite, client.id, classification, inter.reference);
+          intervention = await db.majIntervention(inter.id, { dolibarr_ref: bon.ref });
+          return `${bon.ref} (brouillon) pour ${client.nom}${client.cree ? ', client créé' : ''}`;
+        });
         break;
       }
       case 'transferer': {

@@ -6,6 +6,7 @@
  *   npm start -- essai f.eml   trie un mail enregistré, sans rien écrire ni envoyer
  *   npm start -- rapport [AAAA-MM-JJ]   génère l'Excel du jour (ou d'une date)
  *   npm start -- bulles        liste les bulles Rainbow visibles par le compte
+ *   npm start -- dolibarr      vérifie l'accès Dolibarr, société par société
  */
 import { config as chargerEnv } from 'dotenv';
 chargerEnv({ path: '.env.local' });
@@ -23,6 +24,7 @@ import { classer } from './services/classifieur';
 import { genererRapport } from './services/rapport-excel';
 import { envoyer } from './services/smtp';
 import { arreter as arreterRainbow, listerBulles } from './services/rainbow';
+import { nomEntite } from './services/dolibarr';
 import { demarrerServeur, type Etat } from './services/serveur';
 import { ecrireCurseur, lireCurseur, noterEnvoi } from './services/stockage';
 import { abandonner, traiterMail } from './traitement';
@@ -200,8 +202,20 @@ async function principal() {
       console.log((await listerBulles()).map((b) => `- ${b}`).join('\n') || 'Aucune bulle visible');
       await arreterRainbow();
       process.exit(0);
+    case 'dolibarr': {
+      // Affiche le nom de chaque entité : c'est ce qui permet de vérifier la correspondance société ↔ numéro.
+      for (const [societe, entite] of Object.entries(config.dolibarr.entites)) {
+        try {
+          console.log(`✓ ${societe} → entité ${entite} : « ${await nomEntite(config, entite)} »`);
+        } catch (e) {
+          console.log(`✗ ${societe} → entité ${entite} : ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+      console.log(config.dolibarr.actif ? 'Création des bons : ACTIVE (mode réel uniquement)' : 'Création des bons : désactivée (dolibarr.actif = false)');
+      return;
+    }
     default:
-      throw new Error(`Commande inconnue « ${commande} » (demarrer, une-fois, essai, rapport, bulles)`);
+      throw new Error(`Commande inconnue « ${commande} » (demarrer, une-fois, essai, rapport, bulles, dolibarr)`);
   }
 }
 

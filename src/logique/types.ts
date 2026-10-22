@@ -83,6 +83,7 @@ export type Config = {
   test: { bulleRainbow: string; adresse: string };
   serveur: { port: number; ecranPublic: boolean };
   modele: string;
+  dolibarr: { actif: boolean; url: string; entites: Record<string, number> };
 };
 
 export type PieceJointe = { nom: string; type: string; taille: number; contenu: Buffer };
@@ -149,6 +150,7 @@ export type Intervention = {
   date_prevue: string | null;
   intervenant: string | null;
   notes: string | null;
+  dolibarr_ref: string | null;
   cree_le: string;
 };
 
@@ -160,6 +162,7 @@ export type Action =
   | { type: 'rainbow'; societe: string; gabarit: 'nouvelle' | 'complement' | 'relance'; suite: string }
   | { type: 'repondre'; modele: 'accuse_intervention' | 'accuse_devis' | 'demande_coordonnees'; manquants: string[] }
   | { type: 'classer_pieces_jointes' }
-  | { type: 'transferer'; vers: string[] };
+  | { type: 'transferer'; vers: string[] }
+  | { type: 'bon_dolibarr' };
 
 export type ActionExecutee = { action: Action['type']; detail: string; ok: boolean; simulee: boolean };

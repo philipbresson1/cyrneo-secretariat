@@ -12,7 +12,7 @@ const inter: Intervention = {
   id: 1, reference: 'INT-2026-0001', type: 'intervention', societe: 'sud-assainissement', statut: 'a_planifier', urgence: 'urgente',
   client_nom: 'Jean <Martin>', client_telephone: '06 12 34 56 78', client_email: 'j@m.fr', adresse: '12 route de la mer', commune: 'Porticcio',
   nature: 'vidange fosse', date_souhaitee: 'demain', resume: 'Fosse qui déborde', boite: 'sud-assainissement', mail_message_id: '<a>',
-  relance_message_id: null, date_prevue: null, intervenant: null, notes: null, cree_le: '2026-10-22T07:00:00Z',
+  relance_message_id: null, date_prevue: null, intervenant: null, notes: null, dolibarr_ref: null, cree_le: '2026-10-22T07:00:00Z',
 };
 const journal = {
   id: 1, boite: 'sud-assainissement', recu_le: '2026-10-22T07:00:00Z', expediteur: 'Jean Martin <j@m.fr>', expediteur_adresse: 'j@m.fr',

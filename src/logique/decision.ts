@@ -47,6 +47,7 @@ export function decider(mail: MailRecu, c: Classification, ctx: Contexte): Actio
     const manquants = coordonneesManquantes(complet, i.type);
     if (manquants.length === 0) {
       actions.push({ type: 'completer_intervention', interventionId: i.id, statut: 'a_planifier' });
+      if (i.type === 'intervention' && !i.dolibarr_ref && avecDolibarr(i.societe, ctx.config)) actions.push({ type: 'bon_dolibarr' });
       actions.push({ type: 'rainbow', societe: i.societe, gabarit: 'complement', suite: 'À rappeler pour planifier.' });
       if (ctx.raisonPasDeReponse === null) {
         actions.push({ type: 'repondre', modele: i.type === 'devis' ? 'accuse_devis' : 'accuse_intervention', manquants: [] });
@@ -73,6 +74,8 @@ export function decider(mail: MailRecu, c: Classification, ctx: Contexte): Actio
       const type = c.categorie === 'demande_devis' ? 'devis' : 'intervention';
       const manquants = coordonneesManquantes(c, type);
       actions.push({ type: 'creer_intervention', nature: type, statut: manquants.length > 0 ? 'coordonnees_demandees' : 'a_planifier' });
+      // Le bon Dolibarr attend d'avoir de quoi joindre le client : sinon il serait créé vide.
+      if (type === 'intervention' && manquants.length === 0 && avecDolibarr(societe, ctx.config)) actions.push({ type: 'bon_dolibarr' });
 
       let suite: string;
       if (!peutRepondre) {
@@ -99,6 +102,10 @@ export function decider(mail: MailRecu, c: Classification, ctx: Contexte): Actio
   }
 
   return [...actions, ...transferts(c, societe, ctx.config)];
+}
+
+function avecDolibarr(societe: string, config: Config): boolean {
+  return config.dolibarr.actif && societe in config.dolibarr.entites;
 }
 
 function transferts(c: Classification, societe: string, config: Config): Action[] {

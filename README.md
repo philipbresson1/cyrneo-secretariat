@@ -90,6 +90,7 @@ npm start -- une-fois              # un passage puis arrêt
 npm start -- essai mail.eml        # tri d'un mail sans rien écrire ni envoyer
 npm start -- rapport 2026-10-22    # Excel d'un jour donné
 npm start -- bulles                # bulles Rainbow visibles
+npm start -- dolibarr              # vérifie l'accès Dolibarr société par société
 npm run types                      # vérification TypeScript
 npm test                           # tests
 ```
@@ -112,7 +113,29 @@ src/
 
 Les données (journal, interventions) vont dans un projet Supabase dédié, « Secretariat ».
 
+## Dolibarr
+
+Quand une demande d'intervention a de quoi joindre le client (téléphone et lieu), le secrétariat :
+
+1. retrouve le client dans la bonne société Dolibarr, par email puis par téléphone, ou le crée ;
+2. crée le **bon d'intervention en brouillon**, avec la demande, le lieu, le contact et la référence `INT-…` ;
+3. note la référence Dolibarr (`FI…`) sur la fiche : elle apparaît sur l'écran, dans le suivi et dans l'Excel.
+
+Un humain relit et valide le bon dans Dolibarr. Rien n'est écrit dans Dolibarr hors du mode `reel`.
+
+**Mise en place**
+
+1. Dans Dolibarr, activer le module **API REST** et créer un utilisateur dédié, par exemple `secretariat`, avec :
+   - accès à **toutes les entités** (module Multi-société) ;
+   - droits **Tiers** (lire, créer) et **Interventions** (lire, créer) ;
+   - une **clé API** (fiche utilisateur, onglet « Clé API »), à mettre dans `.env.local` : `DOLIBARR_API_KEY=…`.
+2. Dans `config.json`, renseigner `dolibarr.url` et le numéro d'entité de chaque société (`dolibarr.entites`). Les numéros de l'exemple sont à vérifier.
+3. Vérifier : `npm start -- dolibarr` affiche, pour chaque société, le nom de l'entité Dolibarr correspondante.
+4. Passer `dolibarr.actif` à `true`.
+
+Les devis (propositions commerciales) et la saisie des factures fournisseurs viendront ensuite : pour l'instant, les factures restent classées dans le dossier « à saisir ».
+
 ## Prochaines étapes
 
-- **Dolibarr** : créer le bon d'intervention du jour dans la bonne société (colonne `interventions.dolibarr_ref` déjà prévue), puis pousser les factures du dossier « à saisir ».
+- **Dolibarr** : devis en proposition commerciale, factures fournisseurs depuis le dossier « à saisir ».
 - Destinataires des transferts par société et par type, à définir ensemble.

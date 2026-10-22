@@ -16,6 +16,7 @@ const DEFAUTS = {
   test: { bulleRainbow: '', adresse: '' },
   serveur: { port: 3939, ecranPublic: true },
   modele: 'claude-opus-5-5',
+  dolibarr: { actif: false, url: '', entites: {} },
 } as const;
 
 export function validerConfig(brut: unknown): Config {
@@ -44,6 +45,13 @@ export function validerConfig(brut: unknown): Config {
   }
   if (c.mode === 'test' && (!c.test.bulleRainbow || !c.test.adresse)) {
     erreurs.push('mode test : renseigner test.bulleRainbow et test.adresse (tout y sera envoyé à la place des vrais destinataires)');
+  }
+  if (c.dolibarr.actif) {
+    if (!/^https?:\/\//.test(c.dolibarr.url)) erreurs.push('dolibarr.url : adresse du Dolibarr attendue (https://…)');
+    for (const [s, n] of Object.entries(c.dolibarr.entites)) {
+      if (!ids.has(s)) erreurs.push(`dolibarr.entites : société inconnue « ${s} »`);
+      if (!Number.isInteger(n) || n < 1) erreurs.push(`dolibarr.entites.${s} : numéro d'entité entier attendu`);
+    }
   }
   if (!/^\d{1,2}:\d{2}$/.test(c.rapport.heure)) erreurs.push('rapport.heure au format HH:MM');
 
