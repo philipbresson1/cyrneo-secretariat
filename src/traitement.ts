@@ -29,6 +29,20 @@ function societe(config: Config, id: string): Societe {
 export async function traiterMail(mail: MailRecu, boite: Boite, config: Config): Promise<Bilan> {
   if (await db.dejaJournalise(mail.boite, mail.messageId)) return { statut: 'rien_a_faire', resume: 'déjà traité' };
 
+  // Doublon d'un mail déjà transformé en demande : noté au journal, rien d'autre (ni tri, ni envoi).
+  const double = mail.inReplyTo ? null : await db.demandeEnDouble(mail);
+  if (double) {
+    await db.journaliser({
+      mail,
+      classification: null,
+      societe: null,
+      actions: [{ action: 'creer_intervention', detail: `doublon de ${double.reference}, ignoré`, ok: true, simulee: false }],
+      statut: 'rien_a_faire',
+      interventionId: double.interventionId,
+    });
+    return { statut: 'rien_a_faire', resume: `doublon de ${double.reference}` };
+  }
+
   const raison = raisonDeNePasRepondre(mail, config.domainesInternes);
   const interne = raison === 'expéditeur interne au groupe';
   let liee = interne ? null : await db.interventionParReponse(mail);

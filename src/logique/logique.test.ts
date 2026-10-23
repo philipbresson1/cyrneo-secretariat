@@ -3,7 +3,7 @@ import { choisirTelephone, formaterTelephone, normaliserTelephone, trouverTeleph
 import { raisonDeNePasRepondre } from './garde-fous';
 import { lireClassification, pdfALire } from './classification';
 import { decider, type Contexte } from './decision';
-import { accuseIntervention, demandeCoordonnees, messageRainbow, referenceIntervention } from './modeles';
+import { accuseIntervention, coordonneesManquantes, demandeCoordonnees, estProfessionnel, messageRainbow, referenceIntervention } from './modeles';
 import { validerConfig } from './config';
 import type { Classification, Config, Intervention, MailRecu } from './types';
 import exemple from '../../config.exemple.json';
@@ -182,6 +182,26 @@ describe('décision', () => {
 
   it('publicité : rien à faire', () => {
     expect(decider(mail(), classification({ categorie: 'publicite' }), ctx())).toEqual([]);
+  });
+});
+
+describe('professionnel sans téléphone', () => {
+  const erilia = classification({ contact: { nom: 'Erilia', telephone: '', email: 'myriam.grimaldi@erilia.fr', adresse: 'Sorbier G2', commune: 'Ajaccio' } });
+  it("un bailleur qui donne l'adresse n'a pas à fournir de téléphone", () => {
+    expect(estProfessionnel('myriam.grimaldi@erilia.fr')).toBe(true);
+    expect(estProfessionnel('jean.martin@orange.fr')).toBe(false);
+    expect(coordonneesManquantes(erilia, 'intervention')).toEqual([]);
+    expect(decider(mail({ deAdresse: 'myriam.grimaldi@erilia.fr', repondreA: 'myriam.grimaldi@erilia.fr' }), erilia, ctx())[1]).toMatchObject({ modele: 'accuse_intervention' });
+  });
+  it('un particulier sans téléphone doit toujours le donner', () => {
+    const p = classification({ contact: { ...erilia.contact, email: 'jean@gmail.com' } });
+    expect(coordonneesManquantes(p, 'intervention')).toEqual(['telephone']);
+  });
+  it("l'accusé sans téléphone ne promet pas d'appel", () => {
+    const s = config.societes.find((x) => x.id === 'sud-assainissement')!;
+    const m = accuseIntervention(mail(), erilia, s, 'INT-1');
+    expect(m.texte).toContain('Nous revenons vers vous');
+    expect(m.texte).not.toContain(' au  ');
   });
 });
 

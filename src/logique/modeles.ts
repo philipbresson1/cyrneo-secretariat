@@ -28,7 +28,9 @@ export function accuseIntervention(mail: MailRecu, c: Classification, s: Societe
     salutation(c.contact.nom),
     '',
     `Merci pour votre message. Votre demande d'intervention est bien enregistrée chez ${s.nom} (référence ${reference}).`,
-    `Un membre de l'équipe vous rappelle ${s.delaiRappel} au ${c.contact.telephone} pour convenir d'un créneau.`,
+    c.contact.telephone
+      ? `Un membre de l'équipe vous rappelle ${s.delaiRappel} au ${c.contact.telephone} pour convenir d'un créneau.`
+      : `Nous revenons vers vous ${s.delaiRappel} pour vous confirmer le créneau d'intervention.`,
   ];
   if (c.urgence === 'urgente') {
     lignes.push('', `Nous avons bien noté que c'est urgent. Si la situation s'aggrave d'ici là, appelez-nous directement au ${s.telephone}.`);
@@ -79,9 +81,19 @@ export function demandeCoordonnees(mail: MailRecu, c: Classification, s: Societe
 }
 
 /** Champs indispensables pour qu'un agent puisse rappeler et se déplacer. */
+// Messageries grand public : derrière, un particulier qu'il faut pouvoir rappeler.
+const WEBMAILS = /@(gmail|googlemail|hotmail|outlook|live|msn|yahoo|ymail|icloud|me|mac|aol|orange|wanadoo|free|sfr|neuf|bbox|laposte|gmx|proton|protonmail)\./i;
+
+/** Un professionnel (bailleur, syndic, entreprise) qui envoie un bon avec l'adresse a donné ce
+ *  qu'il faut : on lui répond par mail, inutile d'exiger un téléphone. */
+export function estProfessionnel(email: string): boolean {
+  return email.includes('@') && !WEBMAILS.test(email);
+}
+
 export function coordonneesManquantes(c: Classification, type: 'intervention' | 'devis'): string[] {
   const manquants: string[] = [];
-  if (!c.contact.telephone) manquants.push('telephone');
+  const lieu = !!(c.contact.adresse || c.contact.commune);
+  if (!c.contact.telephone && !(lieu && estProfessionnel(c.contact.email))) manquants.push('telephone');
   // Pour un devis, l'adresse peut attendre l'appel ; pour une intervention, non.
   if (type === 'intervention' && !c.contact.adresse && !c.contact.commune) manquants.push('adresse');
   return manquants;

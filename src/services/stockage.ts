@@ -19,6 +19,32 @@ function verifier<T>(r: { data: T; error: { message: string } | null }, quoi: st
   return r.data;
 }
 
+/** Sujet comparable (casse et espaces). Les préfixes « Re: » sont gardés exprès : une réponse
+ *  du client (coordonnées, relance) n'est jamais un doublon. */
+export function sujetNormalise(sujet: string): string {
+  return sujet.replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+/** Même mail déjà reçu (même expéditeur, même sujet, 7 derniers jours) ayant donné une demande :
+ *  un bon envoyé deux fois, ou en copie sur deux boîtes, ne doit créer qu'une fiche. */
+export async function demandeEnDouble(mail: MailRecu): Promise<{ interventionId: number; reference: string } | null> {
+  const depuis = new Date(Date.now() - 7 * 86_400_000).toISOString();
+  const data = verifier(
+    await sb
+      .from('secretariat_journal')
+      .select('sujet, intervention_id')
+      .eq('expediteur_adresse', mail.deAdresse.toLowerCase())
+      .not('intervention_id', 'is', null)
+      .gte('recu_le', depuis),
+    'Recherche doublon'
+  ) as { sujet: string; intervention_id: number }[];
+  const cible = sujetNormalise(mail.sujet);
+  const trouve = (data ?? []).find((l) => sujetNormalise(l.sujet) === cible);
+  if (!trouve) return null;
+  const inter = await interventionParId(trouve.intervention_id);
+  return inter ? { interventionId: inter.id, reference: inter.reference } : null;
+}
+
 /** Vérifie que la base répond et que la clé donne accès aux tables. */
 export async function testerBase(): Promise<number> {
   const r = await sb.from('secretariat_journal').select('id', { count: 'exact', head: true });
