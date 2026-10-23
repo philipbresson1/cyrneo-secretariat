@@ -10,7 +10,7 @@ import { rdvDuJour, type Rdv } from '../lib/agenda';
 import { estInterne } from '../logique/garde-fous';
 import { trouverTelephones } from '../logique/telephone';
 import { rappelRdv, type InfosRappel } from '../logique/modeles';
-import { CID_LOGO, fichierLogo } from '../logique/signature';
+import { imagesSignature } from '../logique/signature';
 import { envoyer } from './smtp';
 import { emailParTelephone, noterEnvoi, rappelDejaEnvoye } from './stockage';
 
@@ -113,7 +113,7 @@ export async function envoyerRappels(config: Config, maintenant = new Date(), ap
           continue;
         }
         const infos: InfosRappel = { nom: resume.nom, objet: resume.objet, debut: rdv.debut, lieu: resume.lieu || rdv.lieu || '' };
-        const m = rappelRdv(infos, demain, societe, boite.adresse);
+        const m = rappelRdv(infos, demain, societe);
         const destinataire = config.mode === 'test' ? config.test.adresse : client;
         if (!simulation) {
           await envoyer({
@@ -123,7 +123,7 @@ export async function envoyerRappels(config: Config, maintenant = new Date(), ap
             sujet: m.sujet,
             texte: m.texte,
             html: m.html,
-            images: [{ cid: CID_LOGO, chemin: path.resolve('assets/signature', fichierLogo(societe.id)) }],
+            images: imagesSignature(path.resolve('assets/signature')),
             automatique: true,
           });
         }

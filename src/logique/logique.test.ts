@@ -242,9 +242,11 @@ describe('modèles de messages', () => {
     expect(m.texte).toContain("c'est urgent");
   });
   it('version HTML avec la signature du groupe et le logo intégré', () => {
-    const m = accuseIntervention(mail(), classification(), s, 'INT-2026-0042', 'info@groupecyrneo.com');
-    expect(m.html).toContain('cid:logo-societe@cyrneo');
-    expect(m.html).toContain('Ensemble,</b> préservons la nature');
+    const m = accuseIntervention(mail(), classification(), s, 'INT-2026-0042');
+    expect(m.html).toContain('cid:groupe-cyrneo@cyrneo');
+    expect(m.html).toContain('Groupe CYRNEO');
+    expect(m.html).toContain('Lot 15 — ZI du Stiletto');
+    expect(m.html).toContain('cid:sottec@cyrneo');
     expect(m.html).toContain('mailto:info@groupecyrneo.com');
     expect(m.html).toContain('INT-2026-0042');
     expect(m.html).not.toContain('<script');

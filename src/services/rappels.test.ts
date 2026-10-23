@@ -23,7 +23,7 @@ describe('rappels de rendez-vous', () => {
     expect(m.texte).toContain('demain, samedi 24 octobre à 09h30, pour la vidange de votre fosse septique');
     expect(m.texte).toContain('Adresse : Lotissement Spunta di Sole, Cauro');
     expect(m.texte).toContain('04 95 23 02 84');
-    expect(m.html).toContain('cid:logo-societe@cyrneo');
+    expect(m.html).toContain('cid:groupe-cyrneo@cyrneo');
   });
 
   it('rendez-vous sur la journée : pas d’heure inventée', () => {

@@ -4,7 +4,7 @@
 import type { ActionExecutee, Boite, Classification, Config, Intervention, MailRecu, Societe } from './logique/types';
 import { raisonDeNePasRepondre } from './logique/garde-fous';
 import { choisirBulle } from './logique/decision';
-import { CID_LOGO, fichierLogo } from './logique/signature';
+import { imagesSignature } from './logique/signature';
 import path from 'node:path';
 import { decider, fusionnerContact, societeRetenue } from './logique/decision';
 import {
@@ -167,9 +167,9 @@ export async function traiterMail(mail: MailRecu, boite: Boite, config: Config):
       case 'repondre': {
         const ref = intervention?.reference ?? '';
         let m: MailSortant;
-        if (a.modele === 'demande_coordonnees') m = demandeCoordonnees(mail, classification, s, a.manquants, boite.adresse);
-        else if (a.modele === 'accuse_devis') m = accuseDevis(mail, classification, s, ref, boite.adresse);
-        else m = accuseIntervention(mail, classification, s, ref, boite.adresse);
+        if (a.modele === 'demande_coordonnees') m = demandeCoordonnees(mail, classification, s, a.manquants);
+        else if (a.modele === 'accuse_devis') m = accuseDevis(mail, classification, s, ref);
+        else m = accuseIntervention(mail, classification, s, ref);
         const destinataire = config.mode === 'test' ? config.test.adresse : mail.repondreA;
         await executer('repondre', simulation, `${a.modele} → ${destinataire}`, async () => {
           const messageId = await envoyer({
@@ -179,7 +179,7 @@ export async function traiterMail(mail: MailRecu, boite: Boite, config: Config):
             sujet: m.sujet,
             texte: m.texte,
             html: m.html,
-            images: [{ cid: CID_LOGO, chemin: path.resolve('assets/signature', fichierLogo(idSociete)) }],
+            images: imagesSignature(path.resolve('assets/signature')),
             enReponseA: mail.messageId,
             references: mail.references,
             automatique: true,
