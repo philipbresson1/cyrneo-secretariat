@@ -29,7 +29,7 @@ vi.mock('./stockage', () => ({
   majIntervention: vi.fn(async () => inter),
 }));
 
-const config = validerConfig({ ...exemple, agendas: [] });
+const config = validerConfig({ ...exemple, agendas: [], ecran: { colonnes: [] } });
 let dossier = '';
 afterAll(async () => dossier && rm(dossier, { recursive: true, force: true }));
 
@@ -42,7 +42,8 @@ describe('écran et pages locales', () => {
     const base = `http://127.0.0.1:${(serveur.address() as AddressInfo).port}`;
 
     const ecran = await (await fetch(`${base}/ecran`)).text();
-    expect(ecran).toContain('INT-2026-0001');
+    expect(ecran).toContain('Bons à traiter');
+    expect(ecran).toContain('vidange fosse');
     expect(ecran).toContain('Jean &lt;Martin&gt;');
     expect((await fetch(`${base}/journal`)).status).toBe(401);
     const j = await fetch(`${base}/journal?cle=cle-test`);
@@ -52,6 +53,13 @@ describe('écran et pages locales', () => {
     const post = await fetch(`${base}/interventions/1?cle=cle-test`, { method: 'POST', body: 'statut=planifiee&date_prevue=2026-10-23T09:00&intervenant=Paul', headers: { 'content-type': 'application/x-www-form-urlencoded' }, redirect: 'manual' });
     expect(post.status).toBe(303);
     serveur.close();
+  });
+});
+
+describe('titres d’agenda', () => {
+  it('met un rendez-vous sur une ligne et retire les mentions Rainbow', async () => {
+    const { nettoyerTitre } = await import('./serveur');
+    expect(nettoyerTitre('Débouchage regard\nERRARD Christophe\n\nPorticcio <@Joseph Rossi:667c>  tu peux')).toBe('Débouchage regard · ERRARD Christophe · Porticcio tu peux');
   });
 });
 

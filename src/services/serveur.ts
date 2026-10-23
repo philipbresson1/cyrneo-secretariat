@@ -32,7 +32,7 @@ const fmtJour = new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', wee
 const fmtComplet = new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
 
 // --- Agendas : relus au plus toutes les 5 minutes -------------------------------
-type AgendaLu = { nom: string; couleur: string; aujourdhui: Rdv[]; demain: Rdv[]; erreur: string | null };
+type AgendaLu = { env: string; nom: string; couleur: string; aujourdhui: Rdv[]; demain: Rdv[]; erreur: string | null };
 let cacheAgendas: { lu: number; agendas: AgendaLu[] } | null = null;
 
 async function lireAgendas(config: Config): Promise<AgendaLu[]> {
@@ -42,15 +42,15 @@ async function lireAgendas(config: Config): Promise<AgendaLu[]> {
   const agendas = await Promise.all(
     config.agendas.map(async (a): Promise<AgendaLu> => {
       const url = process.env[a.icsEnv];
-      if (!url) return { nom: a.nom, couleur: a.couleur, aujourdhui: [], demain: [], erreur: `variable ${a.icsEnv} absente` };
+      if (!url) return { env: a.icsEnv, nom: a.nom, couleur: a.couleur, aujourdhui: [], demain: [], erreur: `variable ${a.icsEnv} absente` };
       try {
         const r = await fetch(url);
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const ics = await r.text();
-        return { nom: a.nom, couleur: a.couleur, aujourdhui: rdvDuJour(ics, maintenant), demain: rdvDuJour(ics, demain).map((x) => ({ ...x, passe: false })), erreur: null };
+        return { env: a.icsEnv, nom: a.nom, couleur: a.couleur, aujourdhui: rdvDuJour(ics, maintenant), demain: rdvDuJour(ics, demain).map((x) => ({ ...x, passe: false })), erreur: null };
       } catch {
         // Jamais l'URL dans le message : elle donne un accès permanent à l'agenda.
-        return { nom: a.nom, couleur: a.couleur, aujourdhui: [], demain: [], erreur: 'agenda injoignable' };
+        return { env: a.icsEnv, nom: a.nom, couleur: a.couleur, aujourdhui: [], demain: [], erreur: 'agenda injoignable' };
       }
     })
   );
@@ -101,44 +101,119 @@ function nomSociete(config: Config, id: string | null): string {
   return config.societes.find((s) => s.id === id)?.nom ?? id ?? '';
 }
 
-function carteInter(config: Config, i: Intervention): string {
-  const classe = i.urgence === 'urgente' ? 'urgente' : i.statut === 'coordonnees_demandees' ? 'attente' : '';
-  const lieu = [i.adresse, i.commune].filter(Boolean).join(', ');
-  const quand = i.date_prevue ? `${fmtJour.format(new Date(i.date_prevue))} ${fmtHeure.format(new Date(i.date_prevue))}` : i.date_souhaitee ? `souhaité : ${i.date_souhaitee}` : '';
-  return `<div class="inter ${classe}"><div class="haut"><span>${i.urgence === 'urgente' ? '🚨 ' : ''}${e(i.client_nom || 'Client')} — ${e(i.nature || i.resume)}</span><span>${e(quand)}</span></div>
-<div class="bas"><span class="etiquette">${e(nomSociete(config, i.societe))}</span><span class="etiquette">${e(STATUTS[i.statut])}</span>${e(lieu)}${i.intervenant ? ` · 👷 ${e(i.intervenant)}` : ''} · ${e(i.reference)}${i.dolibarr_ref ? ` · Dolibarr ${e(i.dolibarr_ref)}` : ''}</div></div>`;
+/** Titre d'agenda lisible sur une ligne : les rendez-vous contiennent souvent des retours
+ *  à la ligne, des mentions Rainbow et des numéros collés. */
+export function nettoyerTitre(t: string): string {
+  return t
+    .replace(/<@[^>]*>/g, '')
+    .replace(/\s*\n+\s*/g, ' · ')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/^[\s·-]+|[\s·-]+$/g, '')
+    .trim();
 }
 
-function listeRdv(rdvs: Rdv[]): string {
-  if (rdvs.length === 0) return '<div class="vide">Rien de prévu</div>';
-  return rdvs
-    .map((r) => `<div class="rdv ${r.passe ? 'passe' : ''}"><span class="h">${r.journeeEntiere ? 'Journée' : r.debut ? fmtHeure.format(r.debut) : ''}</span><span>${e(r.titre)}${r.lieu ? ` <span class="vide">· ${e(r.lieu)}</span>` : ''}</span></div>`)
-    .join('');
+/** Ancienneté d'une demande, pour le rappel : « 2 h », « 3 j ». */
+function depuis(iso: string, maintenant = Date.now()): string {
+  const minutes = Math.max(0, Math.round((maintenant - new Date(iso).getTime()) / 60_000));
+  if (minutes < 60) return `${minutes} min`;
+  if (minutes < 48 * 60) return `${Math.round(minutes / 60)} h`;
+  return `${Math.round(minutes / 1440)} j`;
+}
+
+const STYLE_ECRAN = `
+:root{--fond:#0b1526;--carte:#13233b;--texte:#f1f5f9;--doux:#8fa3bd;--ligne:#22385a;--urgent:#ef4444;--attente:#f59e0b;--ok:#22c55e}
+*{box-sizing:border-box;margin:0}
+html{font-size:clamp(11px,0.9vw,24px)}
+body{height:100vh;overflow:hidden;background:var(--fond);color:var(--texte);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;display:flex;flex-direction:column}
+header{display:flex;justify-content:space-between;align-items:baseline;padding:.8rem 1.4rem;border-bottom:1px solid var(--ligne)}
+header h1{font-size:1.6rem;font-weight:700}header h1 span{color:#a1d8ee}
+#h{font-size:1.8rem;font-variant-numeric:tabular-nums;color:#a1d8ee}
+main{flex:1;min-height:0;display:grid;grid-template-columns:repeat(var(--cols),1fr) 1.15fr;gap:1rem;padding:1rem 1.4rem}
+section{min-height:0;display:flex;flex-direction:column;background:var(--carte);border-radius:12px;padding:.9rem 1rem}
+section h2{font-size:1.2rem;margin-bottom:.6rem;display:flex;justify-content:space-between;align-items:baseline}
+section h2 small{font-size:.85rem;color:var(--doux);font-weight:500}
+.liste{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;gap:.35rem}
+.rdv{display:flex;gap:.6rem;padding:.35rem .5rem;border-left:4px solid var(--c);background:#0d1a2e;border-radius:6px;line-height:1.25}
+.rdv.passe{opacity:.38}.rdv.encours{background:#173457;box-shadow:inset 0 0 0 1px #3fa7d6}
+.rdv .h{min-width:3.1rem;font-variant-numeric:tabular-nums;color:#a1d8ee;font-weight:600}
+.rdv .t{overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.rdv .ag{color:var(--doux);font-size:.8rem}
+.sep{color:var(--doux);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin:.5rem 0 .1rem}
+.plus{color:var(--doux);font-style:italic;padding:.2rem .5rem}
+.vide{color:var(--doux);font-style:italic}
+.bon{padding:.45rem .6rem;border-left:5px solid var(--ok);background:#0d1a2e;border-radius:6px;line-height:1.25}
+.bon.urgente{border-color:var(--urgent);background:#2a1418}.bon.attente{border-color:var(--attente)}
+.bon .l1{display:flex;justify-content:space-between;gap:.5rem;font-weight:600}
+.bon .l1 .age{color:var(--doux);font-weight:500;white-space:nowrap}
+.bon .l2{color:var(--doux);font-size:.85rem;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.alerte{color:var(--urgent)}
+#retards{background:var(--urgent);color:#fff;border-radius:999px;padding:0 .6rem;font-size:.85rem}
+`;
+
+// Retire les éléments qui débordent d'une liste et affiche « + N autres » : l'écran ne défile jamais.
+const SCRIPT_ECRAN = `
+const h=document.getElementById('h');const t=()=>h.textContent=new Date().toLocaleString('fr-FR',{weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'});t();setInterval(t,15000);
+document.querySelectorAll('.liste').forEach(l=>{let n=0;const p=document.createElement('div');p.className='plus';
+while(l.scrollHeight>l.clientHeight+1){const el=[...l.children].filter(x=>!x.classList.contains('plus')&&!x.classList.contains('sep')).pop();if(!el)break;el.remove();n++;p.textContent='+ '+n+' autre'+(n>1?'s':'');if(!p.isConnected)l.appendChild(p);}
+const der=l.lastElementChild;if(der&&der.classList.contains('sep'))der.remove();});
+`;
+
+function ligneRdv(r: Rdv, a: AgendaLu, plusieurs: boolean, maintenant: number): string {
+  const encours = !r.journeeEntiere && r.debut && r.fin && r.debut.getTime() <= maintenant && r.fin.getTime() > maintenant;
+  const classe = r.passe ? 'passe' : encours ? 'encours' : '';
+  const heure = r.journeeEntiere ? 'Jour' : r.debut ? fmtHeure.format(r.debut) : '';
+  return `<div class="rdv ${classe}" style="--c:${e(a.couleur)}"><span class="h">${heure}</span><span class="t">${e(nettoyerTitre(r.titre))}${plusieurs ? ` <span class="ag">· ${e(a.nom)}</span>` : ''}</span></div>`;
+}
+
+function colonnePlanning(titre: string, agendas: AgendaLu[], maintenant: number): string {
+  const plusieurs = agendas.length > 1;
+  const trier = <T extends { r: Rdv }>(x: T[]): T[] =>
+    x.sort((p, q) => (p.r.journeeEntiere === q.r.journeeEntiere ? (p.r.debut?.getTime() ?? 0) - (q.r.debut?.getTime() ?? 0) : p.r.journeeEntiere ? -1 : 1));
+  const jour = trier(agendas.flatMap((a) => a.aujourdhui.map((r) => ({ r, a }))));
+  const demain = trier(agendas.flatMap((a) => a.demain.map((r) => ({ r, a }))));
+  const erreurs = agendas.filter((a) => a.erreur).map((a) => `<div class="alerte">${e(a.nom)} : ${e(a.erreur)}</div>`).join('');
+  const restants = jour.filter((x) => !x.r.passe).length;
+  // Les rendez-vous passés n'occupent la place que s'il en reste peu à venir.
+  const visibles = restants >= 6 ? jour.filter((x) => !x.r.passe) : jour;
+  return `<section><h2>${e(titre)} <small>${restants} à venir</small></h2><div class="liste">${erreurs}${
+    visibles.map((x) => ligneRdv(x.r, x.a, plusieurs, maintenant)).join('') || '<div class="vide">Rien aujourd’hui</div>'
+  }${demain.length ? `<div class="sep">Demain · ${demain.length}</div>${demain.map((x) => ligneRdv(x.r, x.a, plusieurs, maintenant)).join('')}` : ''}</div></section>`;
+}
+
+function ligneBon(config: Config, i: Intervention): string {
+  const attente = i.statut === 'coordonnees_demandees';
+  const classe = i.urgence === 'urgente' ? 'urgente' : attente ? 'attente' : '';
+  const lieu = [i.commune || i.adresse, nomSociete(config, i.societe)].filter(Boolean).join(' · ');
+  return `<div class="bon ${classe}"><div class="l1"><span>${i.urgence === 'urgente' ? '🚨 ' : ''}${e(i.client_nom || 'Client')}</span><span class="age">${depuis(i.cree_le)}</span></div>
+<div class="l2">${e(i.nature || i.resume)}</div><div class="l2">${attente ? '⏳ coordonnées attendues · ' : ''}${e(lieu)}${i.client_telephone ? ` · ${e(i.client_telephone)}` : ''}</div></div>`;
 }
 
 async function pageEcran(config: Config): Promise<string> {
-  // Base injoignable ou pas encore configurée : l'écran garde au moins les agendas.
+  // Base injoignable : l'écran garde au moins les plannings.
   let erreurBase = '';
   const [inters, agendas] = await Promise.all([
-    interventionsOuvertes().catch((e: unknown) => {
-      console.error('[ecran]', e instanceof Error ? e.message : e);
-      erreurBase = 'Interventions indisponibles pour le moment';
+    interventionsOuvertes().catch((err: unknown) => {
+      console.error('[ecran]', err instanceof Error ? err.message : err);
+      erreurBase = 'Bons indisponibles pour le moment';
       return [] as Intervention[];
     }),
     lireAgendas(config),
   ]);
-  const aPlanifier = inters.filter((i) => i.statut === 'a_planifier' || i.statut === 'coordonnees_demandees');
-  const planifiees = inters.filter((i) => i.statut === 'planifiee').sort((a, b) => (a.date_prevue ?? '').localeCompare(b.date_prevue ?? ''));
-  const blocAgendas = agendas
-    .map((a) => `<div class="agenda"><h3><span class="pastille" style="background:${e(a.couleur)}"></span>${e(a.nom)}</h3>${a.erreur ? `<div class="erreur">${e(a.erreur)}</div>` : `${listeRdv(a.aujourdhui)}<div class="vide" style="margin-top:.4rem">Demain</div>${listeRdv(a.demain)}`}</div>`)
-    .join('');
-  const corps = `<div class="barre"><h1>Groupe CYRNEO · Planning</h1><div class="horloge" id="h"></div></div>
-<div class="grille"><div>
-${erreurBase ? `<div class="carte erreur" style="margin-bottom:1.2rem">${e(erreurBase)}</div>` : ''}<div class="carte"><h2>À planifier (${aPlanifier.length})</h2>${aPlanifier.map((i) => carteInter(config, i)).join('') || '<div class="vide">Tout est planifié 👍</div>'}</div>
-<div class="carte" style="margin-top:1.2rem"><h2>Interventions planifiées (${planifiees.length})</h2>${planifiees.map((i) => carteInter(config, i)).join('') || '<div class="vide">Aucune</div>'}</div>
-</div><div class="carte"><h2>Agendas du jour</h2>${blocAgendas || '<div class="vide">Aucun agenda configuré</div>'}</div></div>
-<script>const h=document.getElementById('h');const t=()=>h.textContent=new Date().toLocaleString('fr-FR',{weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'});t();setInterval(t,15000)</script>`;
-  return page('Planning CYRNEO', corps, 60);
+  const maintenant = Date.now();
+  // Rappel : tout ce qui n'est pas encore planifié, urgences d'abord, puis le plus ancien.
+  const bons = inters
+    .filter((i) => i.statut === 'a_planifier' || i.statut === 'coordonnees_demandees')
+    .sort((a, b) => (a.urgence === b.urgence ? a.cree_le.localeCompare(b.cree_le) : a.urgence === 'urgente' ? -1 : 1));
+  const enRetard = bons.filter((i) => maintenant - new Date(i.cree_le).getTime() > 24 * 3_600_000).length;
+  const colonnes = config.ecran.colonnes.map((c) =>
+    colonnePlanning(c.titre, c.agendas.map((env) => agendas.find((a) => a.env === env)).filter((a): a is AgendaLu => !!a), maintenant)
+  );
+  const corps = `<header><h1>Groupe <span>CYRNEO</span> · Planning</h1><div id="h"></div></header>
+<main style="--cols:${colonnes.length}">${colonnes.join('')}
+<section><h2>Bons à traiter <small>${bons.length}${enRetard ? ` · <span id="retards">${enRetard} depuis + 24 h</span>` : ''}</small></h2><div class="liste">${
+    erreurBase ? `<div class="alerte">${e(erreurBase)}</div>` : bons.map((i) => ligneBon(config, i)).join('') || '<div class="vide">Tout est planifié 👍</div>'
+  }</div></section></main><script>${SCRIPT_ECRAN}</script>`;
+  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="60"><title>Planning CYRNEO</title><style>${STYLE_ECRAN}</style></head><body>${corps}</body></html>`;
 }
 
 function nav(): string {

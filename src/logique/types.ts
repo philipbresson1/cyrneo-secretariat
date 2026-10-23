@@ -84,6 +84,8 @@ export type Config = {
   serveur: { port: number; ecranPublic: boolean };
   modele: string;
   dolibarr: { actif: boolean; url: string; entites: Record<string, number> };
+  /** Colonnes de planning de l'écran d'accueil ; chacune regroupe un ou plusieurs agendas (icsEnv). */
+  ecran: { colonnes: { titre: string; agendas: string[] }[] };
 };
 
 export type PieceJointe = { nom: string; type: string; taille: number; contenu: Buffer };

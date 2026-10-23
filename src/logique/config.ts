@@ -17,6 +17,7 @@ const DEFAUTS = {
   serveur: { port: 3939, ecranPublic: true },
   modele: 'claude-opus-5-5',
   dolibarr: { actif: false, url: '', entites: {} },
+  ecran: { colonnes: [] },
 } as const;
 
 export function validerConfig(brut: unknown): Config {
@@ -45,6 +46,11 @@ export function validerConfig(brut: unknown): Config {
   }
   if (c.mode === 'test' && (!c.test.bulleRainbow || !c.test.adresse)) {
     erreurs.push('mode test : renseigner test.bulleRainbow et test.adresse (tout y sera envoyé à la place des vrais destinataires)');
+  }
+  // Sans colonnes définies : une colonne par agenda.
+  if (!c.ecran.colonnes.length) c.ecran = { colonnes: c.agendas.map((a) => ({ titre: a.nom, agendas: [a.icsEnv] })) };
+  for (const col of c.ecran.colonnes) {
+    for (const env of col.agendas) if (!c.agendas.some((a) => a.icsEnv === env)) erreurs.push(`ecran : agenda « ${env} » absent de la liste agendas`);
   }
   if (c.dolibarr.actif) {
     if (!/^https?:\/\//.test(c.dolibarr.url)) erreurs.push('dolibarr.url : adresse du Dolibarr attendue (https://…)');

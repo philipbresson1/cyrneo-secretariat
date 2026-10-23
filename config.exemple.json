@@ -114,8 +114,8 @@
   ],
   "transferts": [],
   "agendas": [
-    { "nom": "Débouchage Sud Assainissement", "icsEnv": "AGENDA_ICS_DEBOUCHAGE_SA", "couleur": "#ef4444" },
-    { "nom": "Agent Sud Assainissement", "icsEnv": "AGENDA_ICS_AGENT_SA", "couleur": "#2563eb" },
+    { "nom": "Débouchage", "icsEnv": "AGENDA_ICS_DEBOUCHAGE_SA", "couleur": "#ef4444" },
+    { "nom": "Agents", "icsEnv": "AGENDA_ICS_AGENT_SA", "couleur": "#2563eb" },
     { "nom": "Agent Multiservices 2A", "icsEnv": "AGENDA_ICS_AGENT_MS2A", "couleur": "#16a34a" },
     { "nom": "Entretien et Couleurs", "icsEnv": "AGENDA_ICS_ENTRETIEN_COULEURS", "couleur": "#f59e0b" },
     { "nom": "Sud Travaux", "icsEnv": "AGENDA_ICS_SUD_TRAVAUX", "couleur": "#a855f7" }
@@ -147,5 +147,12 @@
   "serveur": {
     "port": 3939,
     "ecranPublic": true
+  },
+  "ecran": {
+    "colonnes": [
+      { "titre": "Sud Assainissement", "agendas": ["AGENDA_ICS_DEBOUCHAGE_SA", "AGENDA_ICS_AGENT_SA"] },
+      { "titre": "Multiservices 2A", "agendas": ["AGENDA_ICS_AGENT_MS2A"] },
+      { "titre": "Sud Travaux", "agendas": ["AGENDA_ICS_SUD_TRAVAUX"] }
+    ]
   }
 }
