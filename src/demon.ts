@@ -7,6 +7,7 @@
  *   npm start -- rapport [AAAA-MM-JJ]   génère l'Excel du jour (ou d'une date)
  *   npm start -- bulles        liste les bulles Rainbow visibles par le compte
  *   npm start -- dolibarr      vérifie l'accès Dolibarr, société par société
+ *   npm start -- verifier      teste chaque branchement : base, Claude, boîtes mail, agendas
  */
 import { config as chargerEnv } from 'dotenv';
 chargerEnv({ path: '.env.local' });
@@ -19,14 +20,15 @@ import { validerConfig } from './logique/config';
 import { raisonDeNePasRepondre } from './logique/garde-fous';
 import { decider } from './logique/decision';
 import { jourParis } from './lib/agenda';
-import { lireNouveaux, convertir } from './services/imap';
+import { lireNouveaux, convertir, testerBoite } from './services/imap';
 import { classer } from './services/classifieur';
 import { genererRapport } from './services/rapport-excel';
 import { envoyer } from './services/smtp';
 import { arreter as arreterRainbow, listerBulles } from './services/rainbow';
 import { nomEntite } from './services/dolibarr';
 import { demarrerServeur, type Etat } from './services/serveur';
-import { ecrireCurseur, lireCurseur, noterEnvoi } from './services/stockage';
+import { ecrireCurseur, lireCurseur, noterEnvoi, testerBase } from './services/stockage';
+import Anthropic from '@anthropic-ai/sdk';
 import { abandonner, traiterMail } from './traitement';
 
 const ESSAIS_MAX = 3;
@@ -180,6 +182,36 @@ async function essai(config: Config, fichier: string): Promise<void> {
   console.log(JSON.stringify({ de: mail.deAdresse, sujet: mail.sujet, classification: c, reponseAuto: raison ?? 'autorisée', actions }, null, 2));
 }
 
+async function verifier(config: Config): Promise<void> {
+  const ligne = async (nom: string, test: () => Promise<string>) => {
+    try {
+      console.log(`✓ ${nom} : ${await test()}`);
+    } catch (e) {
+      console.log(`✗ ${nom} : ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+  console.log(`Mode ${config.mode.toUpperCase()}\n`);
+  await ligne('Base Supabase', async () => {
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE) throw new Error('NEXT_PUBLIC_SUPABASE_URL ou SUPABASE_SERVICE_ROLE absente de .env.local');
+    return `${await testerBase()} mail(s) déjà au journal`;
+  });
+  await ligne('Claude (tri des mails)', async () => {
+    if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY absente de .env.local');
+    const m = await new Anthropic().models.retrieve(config.modele);
+    return `clé valide, modèle ${m.id}`;
+  });
+  for (const b of config.boites) await ligne(`Boîte ${b.adresse}`, async () => `${await testerBoite(b)} mail(s) dans la boîte de réception`);
+  for (const a of config.agendas) {
+    await ligne(`Agenda ${a.nom}`, async () => {
+      const url = process.env[a.icsEnv];
+      if (!url) throw new Error(`${a.icsEnv} absente de .env.local`);
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return `${((await r.text()).match(/BEGIN:VEVENT/g) ?? []).length} événement(s)`;
+    });
+  }
+}
+
 async function principal() {
   const [commande = 'demarrer', argument] = process.argv.slice(2);
   const config = await chargerConfig();
@@ -202,6 +234,8 @@ async function principal() {
       console.log((await listerBulles()).map((b) => `- ${b}`).join('\n') || 'Aucune bulle visible');
       await arreterRainbow();
       process.exit(0);
+    case 'verifier':
+      return verifier(config);
     case 'dolibarr': {
       // Affiche le nom de chaque entité : c'est ce qui permet de vérifier la correspondance société ↔ numéro.
       for (const [societe, entite] of Object.entries(config.dolibarr.entites)) {
@@ -215,7 +249,7 @@ async function principal() {
       return;
     }
     default:
-      throw new Error(`Commande inconnue « ${commande} » (demarrer, une-fois, essai, rapport, bulles, dolibarr)`);
+      throw new Error(`Commande inconnue « ${commande} » (demarrer, une-fois, essai, rapport, bulles, dolibarr, verifier)`);
   }
 }
 

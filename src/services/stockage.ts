@@ -19,6 +19,13 @@ function verifier<T>(r: { data: T; error: { message: string } | null }, quoi: st
   return r.data;
 }
 
+/** Vérifie que la base répond et que la clé donne accès aux tables. */
+export async function testerBase(): Promise<number> {
+  const r = await sb.from('secretariat_journal').select('id', { count: 'exact', head: true });
+  if (r.error) throw new Error(r.error.message || 'base injoignable');
+  return r.count ?? 0;
+}
+
 export async function lireCurseur(boite: string): Promise<{ uidValidity: string; dernierUid: number } | null> {
   const data = verifier(await sb.from('secretariat_curseurs').select('uid_validity, dernier_uid').eq('boite', boite).maybeSingle(), 'Lecture curseur');
   return data ? { uidValidity: data.uid_validity, dernierUid: Number(data.dernier_uid) } : null;

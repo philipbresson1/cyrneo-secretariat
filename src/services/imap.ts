@@ -62,12 +62,20 @@ export function convertir(p: ParsedMail, boite: string, uid: number): MailRecu {
   };
 }
 
-export type Lot = { uidValidity: string; mails: MailRecu[]; dernierUidVu: number };
+/** Raison lisible d'un échec IMAP, sans jamais reprendre d'identifiant. */
+export function raisonImap(e: unknown): string {
+  const x = (e ?? {}) as { authenticationFailed?: boolean; code?: string; responseText?: string; message?: string };
+  if (x.authenticationFailed) {
+    return `identifiant ou mot de passe refusé${x.responseText ? ` (${x.responseText.slice(0, 120)})` : ''}`;
+  }
+  if (x.code === 'ENOTFOUND') return 'serveur introuvable (adresse IMAP ou connexion internet)';
+  if (x.code === 'ETIMEDOUT' || x.code === 'ECONNREFUSED') return `serveur injoignable (${x.code})`;
+  if (x.message?.startsWith('Identifiants manquants')) return x.message;
+  return x.code ? `erreur ${x.code}` : 'erreur inconnue';
+}
 
-/** Lit les nouveaux mails d'une boîte depuis `dernierUid` (exclu). Au tout premier passage
- *  (curseur absent ou UIDVALIDITY changée), ne lit que les mails reçus depuis `depuis`. */
-export async function lireNouveaux(b: Boite, curseur: { uidValidity: string; dernierUid: number } | null, depuis: Date): Promise<Lot> {
-  const client = new ImapFlow({
+function client(b: Boite): ImapFlow {
+  return new ImapFlow({
     host: b.imap?.hote ?? HOTE_OVH,
     port: b.imap?.port ?? 993,
     secure: true,
@@ -76,20 +84,53 @@ export async function lireNouveaux(b: Boite, curseur: { uidValidity: string; der
     greetingTimeout: 30_000,
     socketTimeout: 180_000,
   });
+}
+
+/** Se connecte et compte les mails de la boîte de réception, sans rien lire. */
+export async function testerBoite(b: Boite): Promise<number> {
+  let c: ImapFlow;
+  try {
+    c = client(b);
+  } catch (e) {
+    throw new Error(raisonImap(e));
+  }
+  c.on('error', () => undefined);
+  try {
+    await c.connect();
+    const boite = await c.mailboxOpen('INBOX', { readOnly: true });
+    return boite.exists;
+  } catch (e) {
+    throw new Error(raisonImap(e));
+  } finally {
+    await c.logout().catch(() => undefined);
+  }
+}
+
+export type Lot = { uidValidity: string; mails: MailRecu[]; dernierUidVu: number };
+
+/** Lit les nouveaux mails d'une boîte depuis `dernierUid` (exclu). Au tout premier passage
+ *  (curseur absent ou UIDVALIDITY changée), ne lit que les mails reçus depuis `depuis`. */
+export async function lireNouveaux(b: Boite, curseur: { uidValidity: string; dernierUid: number } | null, depuis: Date): Promise<Lot> {
+  let cx: ImapFlow;
+  try {
+    cx = client(b);
+  } catch (e) {
+    throw new Error(`Boîte ${b.id} : ${raisonImap(e)}`);
+  }
   // Sans écouteur, une coupure réseau après connexion tue tout le processus.
-  client.on('error', (e: unknown) => {
+  cx.on('error', (e: unknown) => {
     const code = e && typeof e === 'object' && 'code' in e ? String((e as { code?: unknown }).code) : 'inconnu';
     console.error(`[imap] incident sur ${b.id} (${code})`);
   });
 
   try {
-    await client.connect();
-    const boite = await client.mailboxOpen('INBOX', { readOnly: true });
+    await cx.connect();
+    const boite = await cx.mailboxOpen('INBOX', { readOnly: true });
     const uidValidity = String(boite.uidValidity);
     const reprise = curseur && curseur.uidValidity === uidValidity;
 
     const recherche = reprise ? { uid: `${curseur.dernierUid + 1}:*` } : { since: depuis };
-    let uids = ((await client.search(recherche, { uid: true })) || []) as number[];
+    let uids = ((await cx.search(recherche, { uid: true })) || []) as number[];
     // « n:* » renvoie toujours le dernier mail, même déjà lu : on refiltre.
     if (reprise) uids = uids.filter((u) => u > curseur.dernierUid);
     uids.sort((a, b2) => a - b2);
@@ -101,7 +142,7 @@ export async function lireNouveaux(b: Boite, curseur: { uidValidity: string; der
 
     // Le parcours du fetch doit être fini avant toute autre commande (imapflow se fige sinon).
     const sources: { uid: number; source: Buffer }[] = [];
-    for await (const m of client.fetch(aLire, { uid: true, source: { maxLength: TAILLE_MAX_MAIL }, size: true }, { uid: true })) {
+    for await (const m of cx.fetch(aLire, { uid: true, source: { maxLength: TAILLE_MAX_MAIL }, size: true }, { uid: true })) {
       if (m.source) sources.push({ uid: m.uid, source: m.source });
     }
 
@@ -112,11 +153,10 @@ export async function lireNouveaux(b: Boite, curseur: { uidValidity: string; der
     }
     return { uidValidity, mails, dernierUidVu: aLire[aLire.length - 1] };
   } catch (e) {
-    const code = e instanceof Error && 'code' in e ? String((e as { code?: unknown }).code) : undefined;
-    throw new Error(`Boîte ${b.id} injoignable${code ? ` (${code})` : ''}`);
+    throw new Error(`Boîte ${b.id} : ${raisonImap(e)}`);
   } finally {
     try {
-      await client.logout();
+      await cx.logout();
     } catch {
       // déjà déconnecté
     }

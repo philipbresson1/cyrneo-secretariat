@@ -91,6 +91,7 @@ npm start -- essai mail.eml        # tri d'un mail sans rien écrire ni envoyer
 npm start -- rapport 2026-10-22    # Excel d'un jour donné
 npm start -- bulles                # bulles Rainbow visibles
 npm start -- dolibarr              # vérifie l'accès Dolibarr société par société
+npm start -- verifier              # teste base, Claude, chaque boîte mail et chaque agenda
 npm run types                      # vérification TypeScript
 npm test                           # tests
 ```
