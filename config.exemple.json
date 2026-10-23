@@ -10,7 +10,12 @@
     "sottec.fr",
     "multiservices2a2b.fr",
     "corse3d.fr",
-    "entretienetcouleurs.com"
+    "entretienetcouleurs.com",
+    "debouchagesudassai@gmail.com",
+    "agent.sudassai@gmail.com",
+    "agent.ms2a@gmail.com",
+    "entretienetcouleurs@gmail.com",
+    "sas.sudtravaux@gmail.com"
   ],
   "boites": [
     {
@@ -26,51 +31,6 @@
       "utilisateurEnv": "MAIL_FACTURATION_CYRNEO_UTILISATEUR",
       "motDePasseEnv": "MAIL_FACTURATION_CYRNEO_MOTDEPASSE",
       "societeParDefaut": "cyrneo"
-    },
-    {
-      "id": "debouchage-sa",
-      "adresse": "debouchagesudassai@gmail.com",
-      "utilisateurEnv": "MAIL_DEBOUCHAGE_SA_UTILISATEUR",
-      "motDePasseEnv": "MAIL_DEBOUCHAGE_SA_MOTDEPASSE",
-      "societeParDefaut": "sud-assainissement",
-      "imap": { "hote": "imap.gmail.com", "port": 993 },
-      "smtp": { "hote": "smtp.gmail.com", "port": 465 }
-    },
-    {
-      "id": "agent-sa",
-      "adresse": "agent.sudassai@gmail.com",
-      "utilisateurEnv": "MAIL_AGENT_SA_UTILISATEUR",
-      "motDePasseEnv": "MAIL_AGENT_SA_MOTDEPASSE",
-      "societeParDefaut": "sud-assainissement",
-      "imap": { "hote": "imap.gmail.com", "port": 993 },
-      "smtp": { "hote": "smtp.gmail.com", "port": 465 }
-    },
-    {
-      "id": "agent-ms2a",
-      "adresse": "agent.ms2a@gmail.com",
-      "utilisateurEnv": "MAIL_AGENT_MS2A_UTILISATEUR",
-      "motDePasseEnv": "MAIL_AGENT_MS2A_MOTDEPASSE",
-      "societeParDefaut": "multiservices-2a",
-      "imap": { "hote": "imap.gmail.com", "port": 993 },
-      "smtp": { "hote": "smtp.gmail.com", "port": 465 }
-    },
-    {
-      "id": "entretien-couleurs",
-      "adresse": "entretienetcouleurs@gmail.com",
-      "utilisateurEnv": "MAIL_ENTRETIEN_COULEURS_UTILISATEUR",
-      "motDePasseEnv": "MAIL_ENTRETIEN_COULEURS_MOTDEPASSE",
-      "societeParDefaut": "entretien-couleurs",
-      "imap": { "hote": "imap.gmail.com", "port": 993 },
-      "smtp": { "hote": "smtp.gmail.com", "port": 465 }
-    },
-    {
-      "id": "sud-travaux",
-      "adresse": "sas.sudtravaux@gmail.com",
-      "utilisateurEnv": "MAIL_SUD_TRAVAUX_UTILISATEUR",
-      "motDePasseEnv": "MAIL_SUD_TRAVAUX_MOTDEPASSE",
-      "societeParDefaut": "sud-travaux",
-      "imap": { "hote": "imap.gmail.com", "port": 993 },
-      "smtp": { "hote": "smtp.gmail.com", "port": 465 }
     }
   ],
   "societes": [
@@ -184,7 +144,6 @@
       "entretien-couleurs": 6
     }
   },
-
   "serveur": {
     "port": 3939,
     "ecranPublic": true

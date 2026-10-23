@@ -54,7 +54,7 @@ copy config.exemple.json config.json
 ```
 
 1. **Supabase** : exécuter `supabase/schema.sql` dans le SQL Editor du projet Supabase « Secretariat » (une seule fois).
-2. **Boîtes Gmail** : sur chaque compte, activer la validation en deux étapes puis créer un « mot de passe d'application » (Compte Google > Sécurité). C'est lui qui va dans `.env.local`, pas le mot de passe du compte.
+2. **Boîtes lues** : info@ et facturation@groupecyrneo.com (OVH). Mot de passe de la boîte dans `.env.local`. Les comptes Gmail des équipes ne servent qu'aux agendas (lus en iCal).
 3. **`.env.local`** : boîtes mail, Claude, Supabase, Rainbow, `SECRETARIAT_CLE`, agendas.
 4. **`config.json`** : boîtes, sociétés (téléphones, noms exacts des bulles Rainbow), transferts, dossiers.
 5. Vérifier Rainbow : `npm start -- bulles`.

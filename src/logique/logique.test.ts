@@ -76,7 +76,7 @@ describe('garde-fous', () => {
     expect(raisonDeNePasRepondre(mail({ entetes: { autoSubmitted: null, precedence: 'bulk', listId: null, autoResponseSuppress: null } }), [])).toMatch(/masse/);
     expect(raisonDeNePasRepondre(mail({ sujet: 'Réponse automatique : absent' }), [])).toMatch(/automatique/);
     expect(raisonDeNePasRepondre(mail({ deAdresse: 'pb@groupecyrneo.com', repondreA: 'pb@groupecyrneo.com' }), config.domainesInternes)).toMatch(/interne/);
-    // Une boîte Gmail du groupe est interne, pas tout gmail.com.
+    // Une adresse Gmail d'agent du groupe est interne, pas tout gmail.com.
     expect(raisonDeNePasRepondre(mail({ deAdresse: 'agent.ms2a@gmail.com', repondreA: 'agent.ms2a@gmail.com' }), config.domainesInternes)).toMatch(/interne/);
     expect(raisonDeNePasRepondre(mail({ deAdresse: 'client@gmail.com', repondreA: 'client@gmail.com' }), config.domainesInternes)).toBeNull();
   });
@@ -120,8 +120,8 @@ describe('décision', () => {
   });
 
   it('société inconnue : société par défaut de la boîte', () => {
-    const actions = decider(mail({ boite: 'agent-ms2a' }), classification({ societe: 'inconnue' }), ctx());
-    expect(actions.find((a) => a.type === 'rainbow')).toMatchObject({ societe: 'multiservices-2a' });
+    const actions = decider(mail({ boite: 'info-cyrneo' }), classification({ societe: 'inconnue' }), ctx());
+    expect(actions.find((a) => a.type === 'rainbow')).toMatchObject({ societe: 'cyrneo' });
   });
 
   it('réponse du client avec les coordonnées : intervention complétée et accusé', () => {
