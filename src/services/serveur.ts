@@ -187,7 +187,7 @@ main.bureau{display:block}
 .compteurs{display:flex;gap:.7rem;padding:.7rem 1.2rem 0}
 .compteur{flex:1;background:var(--carte);border-radius:10px;padding:.5rem .9rem;display:flex;align-items:baseline;gap:.6rem}
 .compteur b{font-size:2.2rem}.compteur span{color:var(--doux)}
-.compteur.rouge b{color:var(--urgent)}.compteur.orange b{color:var(--attente)}
+.compteur.rouge b{color:var(--urgent)}.compteur.orange b{color:var(--attente)}.compteur.bleu b{color:#3fa7d6}
 main.cahier{grid-template-columns:1fr 21rem}
 .appels{display:flex;flex-direction:column;gap:0}
 .appel{display:grid;grid-template-columns:4.6rem 1.6rem minmax(9rem,1.1fr) minmax(10rem,1.6fr) minmax(7rem,1fr) 8.5rem;gap:.7rem;align-items:center;padding:.45rem .5rem;border-bottom:1px solid var(--ligne);line-height:1.25}
@@ -203,7 +203,7 @@ main.cahier{grid-template-columns:1fr 21rem}
 .cote{display:flex;flex-direction:column;gap:.7rem;min-height:0}
 .cote section{flex:none}.cote section.extensible{flex:1}
 .action{display:flex;gap:.5rem;padding:.3rem 0;border-bottom:1px solid var(--ligne);line-height:1.25;font-size:.9rem}
-.action b{min-width:1.6rem;text-align:right}.action.rouge b{color:var(--urgent)}.action.orange b{color:var(--attente)}
+.action b{min-width:1.6rem;text-align:right}.action.rouge b{color:var(--urgent)}.action.orange b{color:var(--attente)}.action.bleu b{color:#3fa7d6}
 .fait{display:flex;gap:.5rem;align-items:baseline;padding:.3rem 0;border-bottom:1px solid var(--ligne);font-size:.88rem;line-height:1.25}
 .fait .ck{color:var(--ok);font-weight:900}.fait .qui{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.fait small{color:var(--doux);white-space:nowrap}
 `;
@@ -360,6 +360,7 @@ const VUES: Vue[] = [
   { cle: 'urgentes', titre: 'Urgentes', filtre: (i) => i.urgence === 'urgente' },
   { cle: 'retard', titre: 'Sans suite depuis + 24 h', filtre: (i, m) => m - new Date(i.cree_le).getTime() > 24 * 3_600_000 },
   { cle: 'reclamations', titre: 'Réclamations', filtre: (i) => i.type === 'reclamation' },
+  { cle: 'devis', titre: 'Devis à faire', filtre: (i) => i.type === 'devis' },
   { cle: 'coordonnees', titre: 'Coordonnées manquantes', filtre: (i) => i.statut === 'coordonnees_demandees' },
   { cle: 'sans_bi', titre: 'BI à créer dans Dolibarr', filtre: (i) => i.type === 'intervention' && i.statut === 'a_planifier' && !i.dolibarr_ref },
 ];
@@ -400,6 +401,7 @@ async function pageBureau(config: Config, url: URL): Promise<string> {
       action('urgentes', 'urgence(s) à caler', 'rouge'),
       action('reclamations', 'réclamation(s) à traiter', 'rouge'),
       action('retard', 'demande(s) sans suite depuis + 24 h', 'rouge'),
+      action('devis', 'devis à chiffrer', 'bleu'),
       action('coordonnees', 'client(s) à rappeler : coordonnées manquantes', 'orange'),
       action('sans_bi', 'BI à créer dans Dolibarr', 'orange'),
     ].join('') || '<div class="vide">Rien à faire 👍</div>';
@@ -423,7 +425,7 @@ async function pageBureau(config: Config, url: URL): Promise<string> {
 <div class="liste appels">${!entrees ? '<div class="alerte">Cahier indisponible pour le moment</div>' : appels.map((i) => ligneAppel(config, i)).join('') || '<div class="vide">Aucune demande sur 3 jours</div>'}</div></section>`;
   }
 
-  const contenu = `<div class="compteurs">${compteur('a_prevoir', 'à prévoir')}${compteur('urgentes', 'urgentes', 'rouge')}${compteur('retard', 'depuis + 24 h', 'rouge')}${compteur('reclamations', 'réclamations', 'rouge')}${compteur('coordonnees', 'coordonnées manquantes', 'orange')}</div>
+  const contenu = `<div class="compteurs">${compteur('a_prevoir', 'à prévoir')}${compteur('urgentes', 'urgentes', 'rouge')}${compteur('retard', 'depuis + 24 h', 'rouge')}${compteur('reclamations', 'réclamations', 'rouge')}${compteur('devis', 'devis à faire', 'bleu')}${compteur('coordonnees', 'sans coordonnées', 'orange')}</div>
 <main class="cahier">${centre}
 <div class="cote">
 <section><h2>À faire</h2>${actions}</section>
