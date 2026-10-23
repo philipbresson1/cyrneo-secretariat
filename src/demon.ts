@@ -10,9 +10,9 @@
  *   npm start -- verifier      teste chaque branchement : base, Claude, boîtes mail, agendas
  */
 import { config as chargerEnv } from 'dotenv';
-chargerEnv({ path: '.env.local' });
+const env = chargerEnv({ path: '.env.local', quiet: true });
 
-import { readFile, access } from 'node:fs/promises';
+import { readFile, access, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { simpleParser } from 'mailparser';
 import type { Config } from './logique/types';
@@ -191,6 +191,14 @@ async function verifier(config: Config): Promise<void> {
     }
   };
   console.log(`Mode ${config.mode.toUpperCase()}\n`);
+  if (env.error) {
+    // Cas classique sous Windows : le Bloc-notes enregistre « .env.local.txt ».
+    const presents = (await readdir('.')).filter((f) => f.startsWith('.env') || f.toLowerCase().includes('env.local'));
+    console.log(`✗ Fichier .env.local introuvable dans ${path.resolve('.')}. Fichiers trouvés : ${presents.join(', ') || 'aucun'}`);
+    console.log('  Si vous voyez « .env.local.txt », renommez-le : ren .env.local.txt .env.local\n');
+  } else {
+    console.log(`✓ Fichier .env.local : ${Object.keys(env.parsed ?? {}).length} variable(s) lue(s)\n`);
+  }
   await ligne('Base Supabase', async () => {
     if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE) throw new Error('NEXT_PUBLIC_SUPABASE_URL ou SUPABASE_SERVICE_ROLE absente de .env.local');
     return `${await testerBase()} mail(s) déjà au journal`;
