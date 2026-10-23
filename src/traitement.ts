@@ -57,7 +57,8 @@ export async function traiterMail(mail: MailRecu, boite: Boite, config: Config):
   // Sans en-tête de réponse, on ne rattache à une demande existante que si le modèle y voit
   // un complément de coordonnées : deux bons de travaux du même bailleur restent deux demandes.
   if (!liee && !interne && c.categorie === 'complement_coordonnees') liee = await db.interventionParExpediteur(mail);
-  const dejaRepondu = raison === null ? await db.reponseRecente(mail.repondreA) : false;
+  // Une réponse automatique par expéditeur toutes les 12 h, sauf en mode test où l'on enchaîne les essais.
+  const dejaRepondu = raison === null && config.mode !== 'test' ? await db.reponseRecente(mail.repondreA) : false;
   const actions = decider(mail, c, { config, raisonPasDeReponse: raison, dejaRepondu, interventionLiee: liee });
   const idSociete = liee?.societe ?? societeRetenue(c, mail, config);
   const s = societe(config, idSociete);
