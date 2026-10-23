@@ -31,7 +31,7 @@ vi.mock('./stockage', () => ({
   creerInterventionManuelle: vi.fn(async () => inter),
 }));
 
-const config = validerConfig({ ...exemple, agendas: [], ecran: { colonnes: [] } });
+const config = validerConfig({ ...exemple, agendas: [], ecran: { colonnes: [], vues: exemple.ecran.vues } });
 let dossier = '';
 afterAll(async () => dossier && rm(dossier, { recursive: true, force: true }));
 
@@ -65,6 +65,11 @@ describe('écran et pages locales', () => {
     expect(bureau).toContain('href="/bureau?vue=urgentes"');
     expect(bureau).toContain('devis à faire');
     for (const lien of ['/equipes', '/bureau', '/interventions', '/journal']) expect(bureau).toContain(`href="${lien}"`);
+    const travaux = await (await fetch(`${base}/travaux`)).text();
+    expect(travaux).toContain('Sud Travaux · Entretien et Couleurs');
+    expect(travaux).toContain('Devis à faire');
+    expect(travaux).not.toContain('Jean &lt;Martin&gt;'); // inter de Sud Assainissement : pas sur cet écran
+    expect(bureau).toContain('href="/travaux"');
     const urgentes = await (await fetch(`${base}/bureau?vue=urgentes&zoom=1.2`)).text();
     expect(urgentes).toContain('Retour au cahier');
     expect(urgentes).toContain('href="/bureau?zoom=1.2"');

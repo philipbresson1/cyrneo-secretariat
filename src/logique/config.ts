@@ -58,7 +58,11 @@ export function validerConfig(brut: unknown): Config {
     erreurs.push('mode test : renseigner test.bulleRainbow et test.adresse (tout y sera envoyé à la place des vrais destinataires)');
   }
   // Sans colonnes définies : une colonne par agenda.
-  if (!c.ecran.colonnes.length) c.ecran = { colonnes: c.agendas.map((a) => ({ titre: a.nom, agendas: [a.icsEnv] })) };
+  if (!c.ecran.colonnes.length) c.ecran.colonnes = c.agendas.map((a) => ({ titre: a.nom, agendas: [a.icsEnv] }));
+  for (const v of c.ecran.vues ?? []) {
+    if (!/^\/[a-z0-9-]+$/.test(v.chemin)) erreurs.push(`ecran.vues : chemin « ${v.chemin} » invalide (ex. /travaux)`);
+    for (const id of v.societes) if (!c.societes.some((x) => x.id === id)) erreurs.push(`ecran.vues ${v.chemin} : société « ${id} » inconnue`);
+  }
   for (const col of c.ecran.colonnes) {
     for (const env of col.agendas) if (!c.agendas.some((a) => a.icsEnv === env)) erreurs.push(`ecran : agenda « ${env} » absent de la liste agendas`);
   }

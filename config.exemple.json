@@ -159,6 +159,9 @@
       { "titre": "Sud Assainissement", "agendas": ["AGENDA_ICS_DEBOUCHAGE_SA", "AGENDA_ICS_AGENT_SA"] },
       { "titre": "Multiservices 2A", "agendas": ["AGENDA_ICS_AGENT_MS2A"] },
       { "titre": "Sud Travaux", "agendas": ["AGENDA_ICS_SUD_TRAVAUX"] }
+    ],
+    "vues": [
+      { "chemin": "/travaux", "titre": "Sud Travaux · Entretien et Couleurs", "societes": ["sud-travaux", "entretien-couleurs"] }
     ]
   },
   "rappels": {

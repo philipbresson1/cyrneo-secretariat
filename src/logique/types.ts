@@ -97,7 +97,11 @@ export type Config = {
   modele: string;
   dolibarr: { actif: boolean; url: string; entites: Record<string, number> };
   /** Colonnes de planning de l'écran d'accueil ; chacune regroupe un ou plusieurs agendas (icsEnv). */
-  ecran: { colonnes: { titre: string; agendas: string[] }[] };
+  ecran: {
+    colonnes: { titre: string; agendas: string[] }[];
+    // Écrans réservés à quelques sociétés (ex. /travaux pour Sud Travaux et Entretien et Couleurs).
+    vues?: { chemin: string; titre: string; societes: string[] }[];
+  };
   heuresOuvrees: { debut: string; fin: string };
 };
 
