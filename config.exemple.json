@@ -40,7 +40,7 @@
       "metier": "holding, accueil commun du groupe",
       "telephone": "04 95 23 02 84",
       "site": "www.groupecyrneo.com",
-      "bulleRainbow": "Accueil CYRNEO",
+      "bulleRainbow": "CYRNEO",
       "delaiRappel": "dans la journée",
       "delaiDevis": "sous 48 h",
       "alerteSecours": []
@@ -51,7 +51,8 @@
       "metier": "vidange de fosses, débouchage, hydrocurage, inspection caméra, bacs à graisse, contrats d'entretien",
       "telephone": "04 95 23 02 84",
       "site": "www.sud-assainissement-ajaccio.com",
-      "bulleRainbow": "Sud Assainissement - Interventions",
+      "bulleRainbow": "Intervention SUD ASSAINISSEMENT",
+      "bulleUrgence": "Urgence assainissement",
       "delaiRappel": "dans la journée",
       "delaiDevis": "sous 48 h",
       "alerteSecours": []
@@ -62,7 +63,7 @@
       "metier": "VRD, terrassement, pose de fosses et de micro-stations",
       "telephone": "",
       "site": "www.sudtravaux.com",
-      "bulleRainbow": "Sud Travaux",
+      "bulleRainbow": "SUD Travaux",
       "delaiRappel": "sous 24 h",
       "delaiDevis": "dans la semaine",
       "alerteSecours": []
@@ -84,7 +85,7 @@
       "metier": "dératisation, désinsectisation, désinfection",
       "telephone": "",
       "site": "www.corse3d.fr",
-      "bulleRainbow": "Corse 3D",
+      "bulleRainbow": "Ms2A2B",
       "delaiRappel": "dans la journée",
       "delaiDevis": "sous 48 h",
       "alerteSecours": []
@@ -95,7 +96,7 @@
       "metier": "nettoyage, entretien de copropriétés, espaces verts",
       "telephone": "",
       "site": "www.multiservices2a2b.fr",
-      "bulleRainbow": "Multiservices 2A",
+      "bulleRainbow": "Ms2A2B",
       "delaiRappel": "sous 24 h",
       "delaiDevis": "sous 48 h",
       "alerteSecours": []
@@ -106,7 +107,7 @@
       "metier": "second œuvre : placo, peinture, sols",
       "telephone": "",
       "site": "www.entretienetcouleurs.com",
-      "bulleRainbow": "Entretien et Couleurs",
+      "bulleRainbow": "Entretien et couleurs",
       "delaiRappel": "sous 24 h",
       "delaiDevis": "dans la semaine",
       "alerteSecours": []

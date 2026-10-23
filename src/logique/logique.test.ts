@@ -189,6 +189,11 @@ describe('décision', () => {
     expect(referenceIntervention(5, 'reclamation', 2026)).toBe('REC-2026-0005');
   });
 
+  it('les bulles Rainbow de la config correspondent aux vraies bulles', () => {
+    const sa = config.societes.find((x) => x.id === 'sud-assainissement')!;
+    expect([sa.bulleRainbow, sa.bulleUrgence]).toEqual(['Intervention SUD ASSAINISSEMENT', 'Urgence assainissement']);
+  });
+
   it('publicité : rien à faire', () => {
     expect(decider(mail(), classification({ categorie: 'publicite' }), ctx())).toEqual([]);
   });

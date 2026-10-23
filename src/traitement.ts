@@ -109,7 +109,8 @@ export async function traiterMail(mail: MailRecu, boite: Boite, config: Config):
             : a.gabarit === 'relance' || a.gabarit === 'reclamation'
               ? messageRainbowRelance(mail, classification, s, a.gabarit === 'reclamation' ? `${classification.urgence === 'urgente' ? '🚨' : '⚠️'} Réclamation ${intervention?.reference ?? ''}`.trim() : undefined)
               : messageRainbow(mail, classification, s, ref, a.suite);
-        const bulle = config.mode === 'test' ? config.test.bulleRainbow : s.bulleRainbow;
+        const bulle =
+          config.mode === 'test' ? config.test.bulleRainbow : classification.urgence === 'urgente' && s.bulleUrgence ? s.bulleUrgence : s.bulleRainbow;
         await executer('rainbow', simulation, `bulle « ${bulle} »`, async () => {
           try {
             await publier(bulle, texte);

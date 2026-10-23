@@ -49,6 +49,7 @@ export type Societe = {
   telephone: string;
   site: string;
   bulleRainbow: string; // nom exact de la bulle Rainbow
+  bulleUrgence?: string; // bulle dédiée aux demandes urgentes, si la société en a une
   delaiRappel: string; // ex. « dans la journée »
   delaiDevis: string; // ex. « sous 48 h »
   alerteSecours: string[]; // adresses prévenues par mail si Rainbow est indisponible

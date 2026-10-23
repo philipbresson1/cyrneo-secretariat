@@ -34,15 +34,17 @@ import { abandonner, traiterMail } from './traitement';
 const ESSAIS_MAX = 3;
 const echecs = new Map<string, number>(); // « boîte|uid » → nombre d'échecs
 
+/** config.json (réglages propres au PC) s'il existe, sinon config.exemple.json du dépôt : sans
+ *  copie locale, chaque mise à jour de nuit apporte aussi la dernière configuration. */
 async function chargerConfig(): Promise<Config> {
-  const fichier = path.resolve('config.json');
-  let texte: string;
-  try {
-    texte = await readFile(fichier, 'utf8');
-  } catch {
-    throw new Error(`Fichier ${fichier} absent : copiez config.exemple.json en config.json et complétez-le.`);
+  for (const nom of ['config.json', 'config.exemple.json']) {
+    try {
+      return validerConfig(JSON.parse(await readFile(path.resolve(nom), 'utf8')));
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
+    }
   }
-  return validerConfig(JSON.parse(texte));
+  throw new Error('Aucun fichier config.json ni config.exemple.json');
 }
 
 function horodatage(): string {
