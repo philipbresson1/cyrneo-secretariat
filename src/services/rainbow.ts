@@ -12,7 +12,7 @@ type SdkRainbow = {
   start: () => Promise<unknown>;
   stop: () => Promise<unknown>;
   events: { on: (evt: string, cb: (...args: unknown[]) => void) => void };
-  bubbles: { getAll: () => Bulle[] };
+  bubbles: { getAll: () => Bulle[]; getAllPendingBubbles: () => Bulle[]; acceptInvitationToJoinBubble: (b: Bulle) => Promise<unknown> };
   im: { sendMessageToBubbleJid: (message: string, jid: string, lang?: string) => Promise<unknown> };
   connectedUser?: { jid_im?: string };
 };
@@ -24,6 +24,21 @@ export type MessageBulle = { id: string; bulle: string; auteur: string; texte: s
 type MessageSdk = { id?: string; type?: string; content?: string; fromJid?: string; fromBubbleJid?: string; from?: { displayName?: string }; originalMessageReplaced?: { id?: string } | null };
 
 let ecouteur: ((m: MessageBulle) => void) | null = null;
+
+// Bulles de la config : une invitation à l'une d'elles est acceptée d'office, les autres non.
+let attendues: string[] = [];
+export function bullesAttendues(noms: string[]): void {
+  attendues = noms.filter(Boolean);
+}
+async function accepter(instance: SdkRainbow, b: Bulle): Promise<void> {
+  if (!attendues.some((n) => normaliser(n) === normaliser(b.name))) return;
+  try {
+    await instance.bubbles.acceptInvitationToJoinBubble(b);
+    console.log(`[rainbow] invitation acceptée : bulle « ${b.name} »`);
+  } catch (e) {
+    console.error(`[rainbow] invitation à « ${b.name} » non acceptée : ${raisonRainbow(e)}`);
+  }
+}
 
 let sdk: SdkRainbow | null = null;
 let pret: Promise<void> | null = null;
@@ -73,11 +88,14 @@ async function demarrer(): Promise<SdkRainbow> {
     sdk = null;
     pret = null;
   });
+  instance.events.on('rainbow_onbubbleinvitationreceived', (...args: unknown[]) => void accepter(instance, args[0] as Bulle));
   try {
     await instance.start();
   } catch (e) {
     throw new Error(`Connexion Rainbow refusée : ${raisonRainbow(e)}`);
   }
+  // Invitations reçues pendant que le secrétariat était arrêté.
+  for (const b of instance.bubbles.getAllPendingBubbles()) await accepter(instance, b);
   return instance;
 }
 

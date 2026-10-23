@@ -27,7 +27,7 @@ import { lireNouveaux, convertir, testerBoite } from './services/imap';
 import { classer } from './services/classifieur';
 import { genererRapport } from './services/rapport-excel';
 import { envoyer } from './services/smtp';
-import { arreter as arreterRainbow, ecouterBulles, listerBulles, publier, type MessageBulle } from './services/rainbow';
+import { arreter as arreterRainbow, bullesAttendues, ecouterBulles, listerBulles, publier, type MessageBulle } from './services/rainbow';
 import { releverBonsDolibarr, traiterMessageBulle } from './services/appels';
 import { creerBonIntervention, entiteDe, listerEntites, verifierDroits } from './services/dolibarr';
 import { blocRainbow, reconnaitreTiers, synchroDue, synchroniserTiers } from './services/tiers';
@@ -334,6 +334,12 @@ async function essaiBon(config: Config, reference: string) {
 async function principal() {
   const [commande = 'demarrer', argument] = process.argv.slice(2);
   const config = await chargerConfig();
+  bullesAttendues([
+    ...config.societes.flatMap((s) => [s.bulleRainbow, s.bulleUrgence ?? '', s.bulleInspection ?? '']),
+    config.bulles.vehicules,
+    config.bulles.admin ?? '',
+    config.test.bulleRainbow,
+  ]);
   switch (commande) {
     case 'demarrer':
       return boucle(config);
