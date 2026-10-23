@@ -288,7 +288,7 @@ main,main.cahier,main.equipes{display:flex;flex-direction:column;padding:.6rem;g
 .appel>span:nth-child(n+3){grid-column:2}
 .appel .quoi,.appel .ou,.appel .qui{white-space:normal}
 section h2{flex-wrap:wrap;gap:.3rem}section h2 small{white-space:normal}
-.gantt{overflow-x:auto}.g-defile{min-width:900px}
+.gantt{overflow-x:auto}.g-defile{min-width:calc(8rem + var(--n) * 2.6rem)}.g-ligne{grid-template-columns:8rem repeat(var(--n),1fr)}.gantt{padding:.6rem 0}.g-nom{font-size:.8rem;position:sticky;left:0;z-index:2;background:var(--carte);align-self:stretch;display:flex;align-items:center;padding-left:.6rem}.g-societe{position:sticky;left:0;width:max-content;padding-left:.6rem}
 }
 .fait .ck{color:var(--ok);font-weight:900}.fait .qui{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.fait small{color:var(--doux);white-space:nowrap}
 `;
@@ -301,6 +301,7 @@ const t=()=>h.textContent=new Date().toLocaleString('fr-FR',{weekday:'long',day:
 document.querySelectorAll('.liste').forEach(l=>{let n=0;const p=document.createElement('div');p.className='plus';
 while(l.scrollHeight>l.clientHeight+1){const el=[...l.children].filter(x=>!x.classList.contains('plus')&&!x.classList.contains('sep')).pop();if(!el)break;el.remove();n++;p.textContent='+ '+n+' autre'+(n>1?'s':'');if(!p.isConnected)l.appendChild(p);}
 const der=l.lastElementChild;if(der&&der.classList.contains('sep'))der.remove();});
+const auj=document.querySelector('.gantt .g-jour.auj');if(auj){const g=auj.closest('.gantt');if(g.scrollWidth>g.clientWidth)g.scrollLeft=auj.offsetLeft-g.clientWidth/3;}
 `;
 
 function ligneRdv(r: Rdv, a: AgendaLu, plusieurs: boolean, maintenant: number): string {
