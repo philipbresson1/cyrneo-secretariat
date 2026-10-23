@@ -270,19 +270,21 @@ describe('heures d’astreinte', () => {
 });
 
 describe('choix de la bulle Rainbow', () => {
+  // Routage de production : le mode test (celui de l'exemple) renverrait tout vers la bulle de test.
+  const reel = { ...config, mode: 'reel' as const };
   const sa = config.societes.find((x) => x.id === 'sud-assainissement')!;
   const ms = config.societes.find((x) => x.id === 'multiservices-2a')!;
   const jeudi10h = new Date('2026-10-22T08:00:00Z');
   const jeudi20h = new Date('2026-10-22T18:00:00Z');
   const m = (p: Partial<Parameters<typeof choisirBulle>[2]>) => ({ gabarit: 'nouvelle' as const, type: 'intervention' as const, inspectionCamera: false, recuLe: jeudi10h, ...p });
-  it('journée : bulle de la société', () => expect(choisirBulle(config, sa, m({}))).toBe('Intervention SUD ASSAINISSEMENT'));
-  it('soir : astreinte', () => expect(choisirBulle(config, sa, m({ recuLe: jeudi20h }))).toBe('Urgence assainissement'));
-  it('devis du soir : pas d’astreinte', () => expect(choisirBulle(config, sa, m({ recuLe: jeudi20h, type: 'devis' }))).toBe('Intervention SUD ASSAINISSEMENT'));
-  it('relance du soir : pas d’astreinte', () => expect(choisirBulle(config, sa, m({ recuLe: jeudi20h, gabarit: 'relance' }))).toBe('Intervention SUD ASSAINISSEMENT'));
-  it('inspection caméra en journée : ITV', () => expect(choisirBulle(config, sa, m({ inspectionCamera: true, type: 'devis' }))).toBe('ITV Sud assai'));
-  it('inspection caméra le soir : astreinte d’abord', () => expect(choisirBulle(config, sa, m({ inspectionCamera: true, recuLe: jeudi20h }))).toBe('Urgence assainissement'));
-  it('société sans astreinte : sa bulle même le soir', () => expect(choisirBulle(config, ms, m({ recuLe: jeudi20h }))).toBe('Ms2A2B'));
-  it('véhicules : bulle entretien', () => expect(choisirBulle(config, ms, m({ gabarit: 'vehicule' }))).toBe('Entretien vehicules cyrneo'));
+  it('journée : bulle de la société', () => expect(choisirBulle(reel, sa, m({}))).toBe('Intervention SUD ASSAINISSEMENT'));
+  it('soir : astreinte', () => expect(choisirBulle(reel, sa, m({ recuLe: jeudi20h }))).toBe('Urgence assainissement'));
+  it('devis du soir : pas d’astreinte', () => expect(choisirBulle(reel, sa, m({ recuLe: jeudi20h, type: 'devis' }))).toBe('Intervention SUD ASSAINISSEMENT'));
+  it('relance du soir : pas d’astreinte', () => expect(choisirBulle(reel, sa, m({ recuLe: jeudi20h, gabarit: 'relance' }))).toBe('Intervention SUD ASSAINISSEMENT'));
+  it('inspection caméra en journée : ITV', () => expect(choisirBulle(reel, sa, m({ inspectionCamera: true, type: 'devis' }))).toBe('ITV Sud assai'));
+  it('inspection caméra le soir : astreinte d’abord', () => expect(choisirBulle(reel, sa, m({ inspectionCamera: true, recuLe: jeudi20h }))).toBe('Urgence assainissement'));
+  it('société sans astreinte : sa bulle même le soir', () => expect(choisirBulle(reel, ms, m({ recuLe: jeudi20h }))).toBe('Ms2A2B'));
+  it('véhicules : bulle entretien', () => expect(choisirBulle(reel, ms, m({ gabarit: 'vehicule' }))).toBe('Entretien vehicules cyrneo'));
   it('mode test : toujours la bulle de test', () => expect(choisirBulle({ ...config, mode: 'test' }, sa, m({ recuLe: jeudi20h }))).toBe('Test secrétariat'));
 });
 
@@ -292,12 +294,13 @@ describe('config', () => {
     expect(c.mode).toBe('test');
     expect(c.test).toEqual({ bulleRainbow: 'Test secrétariat', adresse: 'moi@exemple.fr' });
     // Sans adresse de test, le mode test refuse de démarrer plutôt que d'envoyer n'importe où.
-    expect(() => validerConfig(appliquerEnv(exemple, { SECRETARIAT_MODE: 'test', SECRETARIAT_ADRESSE_TEST: '' }))).toThrow(/mode test/);
+    expect(() => validerConfig(appliquerEnv({ ...exemple, test: { ...exemple.test, adresse: '' } }, { SECRETARIAT_MODE: 'test' }))).toThrow(/mode test/);
     expect(() => validerConfig(appliquerEnv({ ...exemple, test: { bulleRainbow: '', adresse: '' } }, { SECRETARIAT_MODE: 'test' }))).toThrow(/mode test/);
   });
 
-  it("l'exemple est valide et démarre en simulation", () => {
-    expect(config.mode).toBe('simulation');
+  it("l'exemple est valide et tourne en mode test vers pb@groupecyrneo.com", () => {
+    expect(config.mode).toBe('test');
+    expect(config.test.adresse).toBe('pb@groupecyrneo.com');
   });
   it('donne le numéro du groupe aux sociétés sans téléphone', () => {
     expect(config.societes.find((s) => s.id === 'sud-travaux')!.telephone).toBe('04 95 23 02 84');

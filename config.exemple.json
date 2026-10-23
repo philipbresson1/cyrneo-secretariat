@@ -1,5 +1,5 @@
 {
-  "mode": "simulation",
+  "mode": "test",
   "intervalleMinutes": 2,
   "repriseHeures": 24,
   "heuresOuvrees": { "debut": "08:00", "fin": "18:00" },
@@ -136,7 +136,7 @@
   },
   "test": {
     "bulleRainbow": "Test secrétariat",
-    "adresse": ""
+    "adresse": "pb@groupecyrneo.com"
   },
   "dolibarr": {
     "actif": false,
