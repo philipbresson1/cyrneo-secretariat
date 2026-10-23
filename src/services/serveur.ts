@@ -34,10 +34,8 @@ const fmtJour = new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', wee
 const fmtComplet = new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
 
 // --- Agendas : relus au plus toutes les 5 minutes -------------------------------
-/** 0 le lundi … 6 le dimanche, à Paris. */
-function joursDepuisLundi(d: Date): number {
-  return ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].indexOf(new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Paris', weekday: 'short' }).format(d));
-}
+const JOURS_GANTT = 7; // semaine roulante : un jour échu disparaît
+const RECUL_GANTT = 14;
 
 type AgendaLu = { env: string; nom: string; couleur: string; aujourdhui: Rdv[]; demain: Rdv[]; periode: { date: Date; rdvs: Rdv[] }[]; erreur: string | null };
 let cacheAgendas: { lu: number; agendas: AgendaLu[] } | null = null;
@@ -54,12 +52,10 @@ async function lireAgendas(config: Config): Promise<AgendaLu[]> {
         const r = await fetch(url);
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const ics = await r.text();
-        // Gantt des chantiers (bâtiment) : du lundi de cette semaine à la fin de la suivante ; à
-        // partir du vendredi, une semaine de plus pour toujours voir loin devant.
-        const depuisLundi = joursDepuisLundi(maintenant);
-        const lundi = new Date(maintenant.getTime() - depuisLundi * 86_400_000);
-        const periode = Array.from({ length: depuisLundi >= 4 ? 21 : 14 }, (_, n) => {
-          const date = new Date(lundi.getTime() + n * 86_400_000);
+        // Gantt des chantiers (bâtiment) : semaine roulante à partir d'aujourd'hui, précédée de
+        // deux semaines lues seulement pour retrouver le vrai début des chantiers en cours.
+        const periode = Array.from({ length: RECUL_GANTT + JOURS_GANTT }, (_, n) => {
+          const date = new Date(maintenant.getTime() + (n - RECUL_GANTT) * 86_400_000);
           return { date, rdvs: rdvDuJour(ics, date) };
         });
         return { env: a.icsEnv, nom: a.nom, couleur: a.couleur, aujourdhui: rdvDuJour(ics, maintenant), demain: rdvDuJour(ics, demain).map((x) => ({ ...x, passe: false })), periode, erreur: null };
@@ -225,7 +221,6 @@ main.btp{grid-template-columns:1fr 20rem}
 .case{align-self:stretch;border-left:1px solid #1b2c47}.case.we{background:#0f1c31}.case.auj{background:#16305a}
 .g-barre{z-index:1;align-self:center;margin:0 1px;padding:.2rem .1rem;border-radius:6px;background:var(--c);color:#fff;font-size:.78rem;text-align:center;font-weight:600;overflow:hidden;white-space:nowrap;text-overflow:clip;box-shadow:inset 0 0 0 1px rgba(255,255,255,.15)}
 .g-barre.encours{box-shadow:0 0 0 2px #fbbf24}
-.g-ligne.fini{opacity:.4}
 .g-societe{display:flex;align-items:center;gap:.5rem;font-weight:700;font-size:1.05rem;margin:.6rem 0 .2rem}.g-societe small{color:var(--doux);font-weight:500}
 .vide{color:var(--doux);font-style:italic}
 .bon{padding:.45rem .6rem;border-left:5px solid var(--ok);background:#0d1a2e;border-radius:6px;line-height:1.25}
@@ -352,29 +347,33 @@ function chantiers(agendas: AgendaLu[], jours: Date[]): Chantier[] {
 /** Gantt des sociétés du bâtiment : deux semaines en colonnes, un chantier par ligne, groupés
  *  par société ; on voit d'un coup d'œil ce qui est en cours et ce qui arrive. */
 function gantt(config: Config, ids: string[], agendas: AgendaLu[]): string {
-  const jours = agendas.find((a) => a.periode.length)?.periode.map((j) => j.date) ?? [];
-  if (!jours.length) return '<section class="gantt"><div class="vide">Plannings indisponibles</div></section>';
-  const auj = jours.findIndex((j) => jourParisCle(j) === jourParisCle(new Date()));
+  // Toute la période sert à reconstituer les chantiers ; seuls les jours à partir d'aujourd'hui
+  // sont affichés (colonne 0 = aujourd'hui).
+  const tous = agendas.find((a) => a.periode.length)?.periode.map((j) => j.date) ?? [];
+  if (!tous.length) return '<section class="gantt"><div class="vide">Plannings indisponibles</div></section>';
+  const debut = tous.length - JOURS_GANTT;
+  const jours = tous.slice(debut);
+  const col = (d: number) => Math.max(0, d - debut) + 2;
   const cases = (ligne: number) =>
-    jours.map((j, d) => `<span class="case${estWeekEnd(j) ? ' we' : ''}${d === auj ? ' auj' : ''}" style="grid-row:${ligne};grid-column:${d + 2}"></span>`).join('');
+    jours.map((j, d) => `<span class="case${estWeekEnd(j) ? ' we' : ''}${d === 0 ? ' auj' : ''}" style="grid-row:${ligne};grid-column:${d + 2}"></span>`).join('');
   const entete = `<div class="g-ligne g-entete"><span class="g-nom"></span>${jours
-    .map((j, d) => `<span class="g-jour${estWeekEnd(j) ? ' we' : ''}${d === auj ? ' auj' : ''}" style="grid-column:${d + 2}"><small>${e(fmtInitiale.format(j))}</small>${e(fmtNumero.format(j))}</span>`)
+    .map((j, d) => `<span class="g-jour${estWeekEnd(j) ? ' we' : ''}${d === 0 ? ' auj' : ''}" style="grid-column:${d + 2}"><small>${e(d === 0 ? 'auj.' : fmtInitiale.format(j))}</small>${e(fmtNumero.format(j))}</span>`)
     .join('')}</div>`;
   const groupes = ids
     .map((id) => {
       const envs = config.agendas.filter((a) => a.societe === id).map((a) => a.icsEnv);
       const siens = agendas.filter((a) => envs.includes(a.env));
       if (!siens.length) return '';
-      const liste = chantiers(siens, jours);
+      // Chantiers terminés avant aujourd'hui : plus affichés (planning roulant).
+      const liste = chantiers(siens, tous).filter((c) => c.dernier >= debut);
       const erreurs = siens.filter((a) => a.erreur).map((a) => `<div class="alerte">${e(a.nom)} : ${e(a.erreur)}</div>`).join('');
       const lignes = liste
         .map((c) => {
-          const fini = auj >= 0 && c.dernier < auj;
-          const enCours = auj >= c.premier && auj <= c.dernier;
+          const enCours = c.premier <= debut;
           // Le nom est à gauche ; la barre dit quand (heure d'un rendez-vous, ou fin du chantier).
           const quand =
-            c.premier === c.dernier ? (c.r.debut ? fmtHeure.format(c.r.debut).replace(':00', 'h') : 'Jour') : `${fmtNumero.format(jours[c.premier])} → ${fmtNumero.format(jours[c.dernier])}`;
-          return `<div class="g-ligne${fini ? ' fini' : ''}"><span class="g-nom" title="${e(c.r.titre)}">${e(nettoyerTitre(c.r.titre))}</span>${cases(1)}<span class="g-barre${enCours ? ' encours' : ''}" style="grid-row:1;grid-column:${c.premier + 2} / ${c.dernier + 3};--c:${e(c.a.couleur)}">${e(quand)}</span></div>`;
+            c.premier === c.dernier ? (c.r.debut ? fmtHeure.format(c.r.debut).replace(':00', 'h') : 'Jour') : `${c.premier < debut ? 'depuis le ' : ''}${fmtNumero.format(tous[c.premier])} → ${fmtNumero.format(tous[c.dernier])}`;
+          return `<div class="g-ligne"><span class="g-nom" title="${e(c.r.titre)}">${e(nettoyerTitre(c.r.titre))}</span>${cases(1)}<span class="g-barre${enCours ? ' encours' : ''}" style="grid-row:1;grid-column:${col(c.premier)} / ${col(c.dernier) + 1};--c:${e(c.a.couleur)}">${e(quand)}</span></div>`;
         })
         .join('');
       return `<div class="g-societe">${logo(id, 'logo')} ${e(nomSociete(config, id))} <small>${liste.length} chantier${liste.length > 1 ? 's' : ''}</small></div>${erreurs}${lignes || '<div class="vide">Rien de prévu sur deux semaines</div>'}`;

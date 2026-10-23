@@ -218,6 +218,18 @@ export async function lirePropositions(config: Config, entite: number, brouillon
   });
 }
 
+/** Proposition commerciale par sa référence (ex. PR2610-0041), ou null. */
+export async function propositionParRef(config: Config, entite: number, ref: string): Promise<{ id: number; ref: string; socid: number; statut: number } | null> {
+  try {
+    const liste = await appel<Record<string, unknown>[]>(config, entite, 'GET', `/proposals?limit=1&sqlfilters=${encodeURIComponent(`(t.ref:=:'${ref.replace(/[^\w-]/g, '')}')`)}`);
+    const p = liste?.[0];
+    return p ? { id: Number(p.id), ref: texte(p.ref), socid: Number(p.socid) || 0, statut: Number(p.statut ?? p.fk_statut ?? p.status) || 0 } : null;
+  } catch (e) {
+    if (e instanceof ErreurDolibarr && e.statut === 404) return null;
+    throw e;
+  }
+}
+
 /** Bon d'intervention par sa référence (ex. FI2610-0012), ou null. */
 export async function bonParRef(config: Config, entite: number, ref: string): Promise<BonLu | null> {
   try {

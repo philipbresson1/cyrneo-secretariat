@@ -12,8 +12,8 @@
 import type { Classification, Config, Intervention, MailRecu, Societe } from '../logique/types';
 import { choisirBulle } from '../logique/decision';
 import { classer } from './classifieur';
-import { bonParRef, entiteDe, lireBonsRecents, lirePropositions, type BonLu, type PropositionLue } from './dolibarr';
-import { memeBulle, publier, type MessageBulle } from './rainbow';
+import { bonParRef, entiteDe, lireBonsRecents, lirePropositions, propositionParRef, type BonLu, type PropositionLue } from './dolibarr';
+import { historiqueBulle, memeBulle, publier, type MessageBulle } from './rainbow';
 import * as db from './stockage';
 import { blocRainbow, indexTiers, reconnaitreTiers, type TiersReconnu } from './tiers';
 
@@ -182,11 +182,46 @@ export async function releverBonsDolibarr(config: Config, log: Journal): Promise
   }
 }
 
-/** Société dont c'est la bulle (bulle principale, d'astreinte ou ITV). En mode test, seule la
- *  bulle de test est écoutée et la société vient de la lecture du message. */
+/** Société dont c'est la bulle (bulle principale, d'astreinte ou ITV) ; 'test' pour la bulle
+ *  de test (la société vient alors de la lecture du message). */
 export function societeDeLaBulle(config: Config, bulle: string): Societe | 'test' | null {
-  if (config.mode === 'test') return memeBulle(bulle, config.test.bulleRainbow) ? 'test' : null;
+  if (config.test.bulleRainbow && memeBulle(bulle, config.test.bulleRainbow)) return 'test';
   return config.societes.find((s) => [s.bulleRainbow, s.bulleUrgence, s.bulleInspection].some((b) => b && memeBulle(b, bulle))) ?? null;
+}
+
+/** Numéro de devis Dolibarr écrit dans un post (PR2610-0041). */
+export function numeroDevis(texte: string): string | null {
+  const m = texte.match(/\bPR\s?-?(\d{4})-(\d{3,5})\b/i);
+  return m ? `PR${m[1]}-${m[2]}` : null;
+}
+
+/** Lie la demande de devis à la proposition Dolibarr dont le numéro a été écrit dans le post. */
+async function lierDevis(config: Config, fiche: Intervention, ref: string, log: Journal): Promise<void> {
+  if (fiche.dolibarr_ref === ref || !config.dolibarr.url || !process.env.DOLIBARR_API_KEY) return;
+  for (const entite of new Set([entiteDe(config, fiche.societe), ...Object.values(config.dolibarr.entites)])) {
+    const p = await propositionParRef(config, entite, ref);
+    if (!p) continue;
+    await db.majIntervention(fiche.id, { dolibarr_ref: p.ref, dolibarr_id: p.id, dolibarr_entite: entite, dolibarr_tiers_id: fiche.dolibarr_tiers_id ?? (p.socid || null), statut: STATUT_DEVIS[p.statut] ?? fiche.statut });
+    log(`${fiche.reference} liée au devis ${p.ref}`);
+    return;
+  }
+}
+
+/** Reprise d'une bulle : relit ses posts des `jours` derniers jours et en tire les devis à faire
+ *  (sans rien répondre dans la bulle). Les anciennes demandes d'intervention sont ignorées : elles
+ *  ont été traitées depuis. */
+export async function repriseBulle(config: Config, nom: string, jours: number, log: Journal): Promise<number> {
+  const posts = await historiqueBulle(nom, jours);
+  let crees = 0;
+  for (const m of posts) {
+    try {
+      if (await traiterMessageBulle(config, m, log, { reprise: true })) crees += 1;
+    } catch (e) {
+      log(`⚠️ Reprise « ${nom} » : ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  log(`Reprise de « ${nom} » : ${posts.length} post(s) relu(s) sur ${jours} jours, ${crees} devis à faire ajouté(s)`);
+  return crees;
 }
 
 /** Numéro de BI écrit dans un post (numérotation Dolibarr : FI2610-0012). */
@@ -214,19 +249,24 @@ async function lierBon(config: Config, fiche: Intervention, ref: string, log: Jo
 }
 
 /** Post d'une bulle. Nouvelle demande prise au téléphone : fiche + tiers + réponse. Post
- *  modifié avec le n° du BI : fiche liée au bon. */
-export async function traiterMessageBulle(config: Config, m: MessageBulle, log: Journal): Promise<void> {
+ *  modifié avec le n° du BI (ou du devis Dolibarr) : fiche liée. Renvoie true si une fiche est créée.
+ *  En reprise (anciens posts) : devis seulement, aucune réponse dans la bulle. */
+export async function traiterMessageBulle(config: Config, m: MessageBulle, log: Journal, options: { reprise?: boolean } = {}): Promise<boolean> {
   const cible = societeDeLaBulle(config, m.bulle);
-  if (!cible) return;
+  if (!cible) return false;
+  // On répond dans les bulles des sociétés en mode réel seulement ; la bulle de test, toujours.
+  const repondre = !options.reprise && config.mode !== 'simulation' && (config.mode === 'reel' || cible === 'test');
   // Un post modifié garde la clé du post d'origine.
   const cle = `rainbow:${m.remplace ?? m.id}`;
   const bonEcrit = numeroBon(m.texte);
+  const devisEcrit = numeroDevis(m.texte);
   const existante = await db.interventionParCle(cle);
   if (existante) {
-    if (bonEcrit) await lierBon(config, existante, bonEcrit, log);
-    return;
+    if (bonEcrit && existante.type !== 'devis') await lierBon(config, existante, bonEcrit, log);
+    if (devisEcrit && existante.type === 'devis') await lierDevis(config, existante, devisEcrit, log);
+    return false;
   }
-  if (m.texte.length < 25) return;
+  if (m.texte.length < 25) return false;
 
   const pseudo: MailRecu = {
     boite: 'rainbow',
@@ -238,7 +278,7 @@ export async function traiterMessageBulle(config: Config, m: MessageBulle, log: 
     deNom: m.auteur,
     repondreA: '',
     sujet: `Post Rainbow (${m.bulle})`,
-    recuLe: new Date(),
+    recuLe: m.date ?? new Date(),
     texte: m.texte,
     entetes: { autoSubmitted: null, precedence: null, listId: null, autoResponseSuppress: null },
     piecesJointes: [],
@@ -246,28 +286,32 @@ export async function traiterMessageBulle(config: Config, m: MessageBulle, log: 
   const contexte =
     `Ce n'est pas un mail : c'est un post-it écrit par ${m.auteur || 'un membre de l’équipe'} dans la bulle Rainbow « ${m.bulle} » de l'équipe. ` +
     "S'il note une nouvelle demande d'un client (prise au téléphone ou sur place), catégorie demande_intervention ou demande_devis, avec les coordonnées du client. " +
-    "Un numéro de bon d'intervention (FI…) peut y figurer : ce n'est pas une coordonnée. " +
+    "Un devis à établir (chiffrage, visite pour devis, « devis à faire ») : demande_devis. Un devis déjà fait, envoyé ou signé : autre. " +
+    "Un numéro de bon d'intervention (FI…) ou de devis (PR…) peut y figurer : ce n'est pas une coordonnée. " +
     "Toute autre chose (discussion, planning, suivi ou compte rendu d'une intervention déjà connue, question à un collègue) : catégorie autre.";
   const c: Classification = await classer(pseudo, config, contexte);
-  if (c.categorie !== 'demande_intervention' && c.categorie !== 'demande_devis') return;
+  if (c.categorie !== 'demande_devis' && (options.reprise || c.categorie !== 'demande_intervention')) return false;
 
   const s = cible === 'test' ? (config.societes.find((x) => x.id === c.societe) ?? config.societes[0]) : cible;
   const r = await reconnaitreTiers(config, pseudo, c).catch(() => null);
   const tiersId = r?.tiers?.id ?? null;
 
-  const deja = await db.interventionRecenteSemblable(tiersId, c.contact.telephone);
+  const devis = c.categorie === 'demande_devis';
+  const deja = devis ? (tiersId ? await db.devisEnCoursDuTiers(tiersId) : null) : await db.interventionRecenteSemblable(tiersId, c.contact.telephone);
   if (deja) {
-    if (bonEcrit) await lierBon(config, deja, bonEcrit, log);
-    if (config.mode !== 'simulation') await publier(m.bulle, `ℹ️ Déjà enregistrée : ${deja.reference} (${deja.nature || deja.resume})`);
-    return;
+    if (bonEcrit && !devis) await lierBon(config, deja, bonEcrit, log);
+    if (devisEcrit && devis) await lierDevis(config, deja, devisEcrit, log);
+    if (repondre) await publier(m.bulle, `ℹ️ Déjà enregistrée : ${deja.reference} (${deja.nature || deja.resume})`);
+    return false;
   }
 
   const fiche: Intervention = await db.creerInterventionTelephone({
     source: 'rainbow',
     cle,
-    type: c.categorie === 'demande_devis' ? 'devis' : 'intervention',
+    type: devis ? 'devis' : 'intervention',
     societe: s.id,
     urgence: c.urgence,
+    ...(m.date ? { cree_le: m.date.toISOString() } : {}),
     client_nom: c.contact.nom || r?.tiers?.nom || '',
     client_telephone: c.contact.telephone || r?.tiers?.telephone || '',
     client_email: c.contact.email || r?.tiers?.email || '',
@@ -279,11 +323,14 @@ export async function traiterMessageBulle(config: Config, m: MessageBulle, log: 
     dolibarr_tiers_id: tiersId,
   });
   log(`Post dans « ${m.bulle} » → ${fiche.reference}`);
-  if (bonEcrit) await lierBon(config, fiche, bonEcrit, log);
+  if (bonEcrit && !devis) await lierBon(config, fiche, bonEcrit, log);
+  if (devisEcrit && devis) await lierDevis(config, fiche, devisEcrit, log);
 
-  if (config.mode === 'simulation') return;
-  await publier(
-    m.bulle,
-    [`✅ ${fiche.reference} · ${s.nom}${bonEcrit ? ` · bon ${bonEcrit}` : ''}`, r && r.index.tiers.size > 0 ? blocRainbow(r) : ''].filter(Boolean).join('\n')
-  );
+  if (repondre) {
+    await publier(
+      m.bulle,
+      [`✅ ${fiche.reference} · ${s.nom}${bonEcrit && !devis ? ` · bon ${bonEcrit}` : ''}`, r && r.index.tiers.size > 0 ? blocRainbow(r) : ''].filter(Boolean).join('\n')
+    );
+  }
+  return true;
 }

@@ -14,6 +14,7 @@ const db = vi.hoisted(() => ({
   interventionParCle: vi.fn(async () => null),
   devisAvecProposition: vi.fn(async () => [] as unknown[]),
   devisOuvertDuTiers: vi.fn(async () => null),
+  devisEnCoursDuTiers: vi.fn(async () => null),
 }));
 const bons = vi.hoisted(() => ({ liste: [] as unknown[], propositions: [] as { id: number; ref: string; socid: number; statut: number; creeLe: Date; totalHt: number; libelle: string; refClient: string }[] }));
 const publier = vi.hoisted(() => vi.fn());
@@ -75,11 +76,33 @@ describe('aller-retour Dolibarr', () => {
     expect(db.majIntervention).toHaveBeenCalledWith(7, expect.objectContaining({ dolibarr_id: 13, dolibarr_ref: 'FI13' }));
   });
 
-  it('écoute les bulles des sociétés (et seulement la bulle de test en mode test)', () => {
+  it('écoute les bulles des sociétés et la bulle de test', () => {
     expect(societeDeLaBulle(config, 'Urgence assainissement')).toMatchObject({ id: 'sud-assainissement' });
     expect(societeDeLaBulle(config, 'Entretien vehicules cyrneo')).toBeNull();
     expect(societeDeLaBulle({ ...config, mode: 'test' }, 'Test secrétariat')).toBe('test');
-    expect(societeDeLaBulle({ ...config, mode: 'test' }, 'SUD Travaux')).toBeNull();
+    expect(societeDeLaBulle({ ...config, mode: 'test' }, 'SUD Travaux')).toMatchObject({ id: 'sud-travaux' });
+  });
+
+  it('mode test : un devis noté dans la bulle Sud Travaux est enregistré, sans réponse dans la bulle', async () => {
+    classer.mockResolvedValueOnce({
+      categorie: 'demande_devis', societe: 'sud-travaux', urgence: 'normale', resume: 'Devis mur', nature: 'devis mur de soutènement', dateSouhaitee: '', inspectionCamera: false,
+      contact: { nom: 'M. Santucci', telephone: '06 10 20 30 40', email: '', adresse: '', commune: 'Cauro' },
+    });
+    const ancien = new Date('2026-09-15T09:00:00Z');
+    const cree = await traiterMessageBulle({ ...config, mode: 'test' }, { id: 'p1', bulle: 'SUD Travaux', auteur: 'Jo', texte: 'Devis à faire mur de soutènement M. Santucci Cauro 06 10 20 30 40', date: ancien }, () => {});
+    expect(cree).toBe(true);
+    expect(db.creerInterventionTelephone).toHaveBeenCalledWith(expect.objectContaining({ type: 'devis', societe: 'sud-travaux', cree_le: ancien.toISOString() }));
+    expect(publier).not.toHaveBeenCalled();
+  });
+
+  it('reprise des anciens posts : les anciennes demandes d’intervention sont ignorées', async () => {
+    classer.mockResolvedValueOnce({
+      categorie: 'demande_intervention', societe: 'sud-travaux', urgence: 'normale', resume: 'x', nature: 'x', dateSouhaitee: '', inspectionCamera: false,
+      contact: { nom: 'X', telephone: '', email: '', adresse: '', commune: '' },
+    });
+    const cree = await traiterMessageBulle(config, { id: 'p2', bulle: 'SUD Travaux', auteur: 'Jo', texte: 'Reprise dalle garage chez M. X demain matin' }, () => {}, { reprise: true });
+    expect(cree).toBe(false);
+    expect(db.creerInterventionTelephone).not.toHaveBeenCalled();
   });
 
   it("attend 30 minutes avant de relever un bon, le temps que son n° soit ajouté au post", async () => {

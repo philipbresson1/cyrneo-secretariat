@@ -240,6 +240,16 @@ export async function devisAvecProposition(entite: number, ids: number[]): Promi
   ) as Intervention[];
 }
 
+/** Devis encore à faire pour ce tiers (quelle que soit son origine) : un post qui en reparle
+ *  n'en crée pas un second. */
+export async function devisEnCoursDuTiers(tiersId: number): Promise<Intervention | null> {
+  const data = verifier(
+    await sb.from('interventions').select('*').eq('type', 'devis').eq('dolibarr_tiers_id', tiersId).in('statut', ['coordonnees_demandees', 'a_planifier']).limit(1),
+    'Recherche devis en cours'
+  );
+  return (data?.[0] as Intervention) ?? null;
+}
+
 /** Demande de devis encore ouverte pour ce tiers, sans proposition Dolibarr (60 jours) : la
  *  proposition que le bureau vient de commencer y répond. */
 export async function devisOuvertDuTiers(tiersId: number): Promise<Intervention | null> {

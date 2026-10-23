@@ -15,11 +15,17 @@ type SdkRainbow = {
   bubbles: { getAll: () => Bulle[]; getAllPendingBubbles: () => Bulle[]; acceptInvitationToJoinBubble: (b: Bulle) => Promise<unknown> };
   im: { sendMessageToBubbleJid: (message: string, jid: string, lang?: string) => Promise<unknown> };
   connectedUser?: { jid_im?: string };
+  conversations: {
+    getBubbleConversation: (jid: string) => Promise<ConversationSdk | null>;
+    getHistoryPage: (c: ConversationSdk, taille?: number) => Promise<ConversationSdk>;
+  };
 };
+
+type ConversationSdk = { messages: (MessageSdk & { date?: Date | string; deleted?: boolean })[]; historyComplete?: boolean };
 
 /** Message écrit par une personne dans une bulle. */
 /** remplace : id du message d'origine quand c'est une modification (ex. n° de BI ajouté). */
-export type MessageBulle = { id: string; bulle: string; auteur: string; texte: string; remplace?: string };
+export type MessageBulle = { id: string; bulle: string; auteur: string; texte: string; remplace?: string; date?: Date };
 
 type MessageSdk = { id?: string; type?: string; content?: string; fromJid?: string; fromBubbleJid?: string; from?: { displayName?: string }; originalMessageReplaced?: { id?: string } | null };
 
@@ -133,6 +139,37 @@ export async function publier(nomBulle: string, texte: string): Promise<void> {
 export async function ecouterBulles(cb: (m: MessageBulle) => void): Promise<void> {
   ecouteur = cb;
   await connecte();
+}
+
+/** Posts d'une bulle sur les `jours` derniers jours (les plus anciens d'abord), messages du
+ *  secrétariat exclus. Sert à la reprise : ce qui a été écrit avant que le secrétariat écoute. */
+export async function historiqueBulle(nomBulle: string, jours: number): Promise<MessageBulle[]> {
+  const s = await connecte();
+  const bulle = s.bubbles.getAll().find((b) => normaliser(b.name) === normaliser(nomBulle));
+  if (!bulle) throw new Error(`Bulle Rainbow « ${nomBulle} » introuvable`);
+  let conversation = await s.conversations.getBubbleConversation(bulle.jid);
+  if (!conversation) return [];
+  const limite = Date.now() - jours * 86_400_000;
+  const dateDe = (m: { date?: Date | string }) => (m.date ? new Date(m.date).getTime() : Date.now());
+  // Pages de 50 messages, en remontant, jusqu'à la date limite (40 pages au plus).
+  for (let page = 0; page < 40 && !conversation.historyComplete; page++) {
+    conversation = await s.conversations.getHistoryPage(conversation, 50);
+    const plusAncien = Math.min(...conversation.messages.map(dateDe));
+    if (plusAncien < limite) break;
+  }
+  const moi = s.connectedUser?.jid_im;
+  return conversation.messages
+    .filter((m) => !m.deleted && m.content?.trim() && m.fromJid !== moi && dateDe(m) >= limite)
+    .sort((a, b) => dateDe(a) - dateDe(b))
+    .map((m) => ({
+      id: m.id ?? '',
+      bulle: bulle.name,
+      auteur: m.from?.displayName ?? '',
+      texte: m.content!.trim(),
+      remplace: m.originalMessageReplaced?.id || undefined,
+      date: new Date(dateDe(m)),
+    }))
+    .filter((m) => m.id);
 }
 
 /** Normalisation des noms de bulles, pour comparer à la config. */
