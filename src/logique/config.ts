@@ -77,3 +77,15 @@ export function validerConfig(brut: unknown): Config {
   c.domainesInternes = [...new Set([...c.domainesInternes, ...c.boites.map((b) => b.adresse)].map((d) => d.toLowerCase()))];
   return c;
 }
+
+/** Réglages du PC prioritaires sur la config du dépôt : le mode (simulation, test, reel) et
+ *  l'adresse de test se changent dans .env.local, sans toucher au code partagé. */
+export function appliquerEnv(brut: Record<string, unknown>, env: NodeJS.ProcessEnv = process.env): Record<string, unknown> {
+  const sortie = { ...brut };
+  if (env.SECRETARIAT_MODE) sortie.mode = env.SECRETARIAT_MODE.trim().toLowerCase();
+  const test = { ...((brut.test as Record<string, unknown>) ?? {}) };
+  if (env.SECRETARIAT_ADRESSE_TEST) test.adresse = env.SECRETARIAT_ADRESSE_TEST.trim();
+  if (env.SECRETARIAT_BULLE_TEST) test.bulleRainbow = env.SECRETARIAT_BULLE_TEST.trim();
+  sortie.test = test;
+  return sortie;
+}

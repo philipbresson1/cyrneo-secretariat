@@ -136,7 +136,7 @@
   },
   "test": {
     "bulleRainbow": "Test secrétariat",
-    "adresse": "votre-adresse-de-test@exemple.fr"
+    "adresse": ""
   },
   "dolibarr": {
     "actif": false,

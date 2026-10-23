@@ -16,7 +16,7 @@ import { readFile, access, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { simpleParser } from 'mailparser';
 import type { Config } from './logique/types';
-import { validerConfig } from './logique/config';
+import { appliquerEnv, validerConfig } from './logique/config';
 import { raisonDeNePasRepondre } from './logique/garde-fous';
 import { decider } from './logique/decision';
 import { jourParis } from './lib/agenda';
@@ -39,7 +39,7 @@ const echecs = new Map<string, number>(); // « boîte|uid » → nombre d'éche
 async function chargerConfig(): Promise<Config> {
   for (const nom of ['config.json', 'config.exemple.json']) {
     try {
-      return validerConfig(JSON.parse(await readFile(path.resolve(nom), 'utf8')));
+      return validerConfig(appliquerEnv(JSON.parse(await readFile(path.resolve(nom), 'utf8'))));
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
     }

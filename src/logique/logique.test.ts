@@ -4,7 +4,7 @@ import { raisonDeNePasRepondre } from './garde-fous';
 import { lireClassification, pdfALire } from './classification';
 import { choisirBulle, decider, type Contexte } from './decision';
 import { accuseIntervention, coordonneesManquantes, demandeCoordonnees, estProfessionnel, messageRainbow, referenceIntervention } from './modeles';
-import { validerConfig } from './config';
+import { appliquerEnv, validerConfig } from './config';
 import { horsHeuresOuvrees, joursFeries, paques } from './horaires';
 import type { Classification, Config, Intervention, MailRecu } from './types';
 import exemple from '../../config.exemple.json';
@@ -287,6 +287,15 @@ describe('choix de la bulle Rainbow', () => {
 });
 
 describe('config', () => {
+  it('le mode et l’adresse de test se règlent dans .env.local', () => {
+    const c = validerConfig(appliquerEnv(exemple, { SECRETARIAT_MODE: 'TEST', SECRETARIAT_ADRESSE_TEST: 'moi@exemple.fr' }));
+    expect(c.mode).toBe('test');
+    expect(c.test).toEqual({ bulleRainbow: 'Test secrétariat', adresse: 'moi@exemple.fr' });
+    // Sans adresse de test, le mode test refuse de démarrer plutôt que d'envoyer n'importe où.
+    expect(() => validerConfig(appliquerEnv(exemple, { SECRETARIAT_MODE: 'test', SECRETARIAT_ADRESSE_TEST: '' }))).toThrow(/mode test/);
+    expect(() => validerConfig(appliquerEnv({ ...exemple, test: { bulleRainbow: '', adresse: '' } }, { SECRETARIAT_MODE: 'test' }))).toThrow(/mode test/);
+  });
+
   it("l'exemple est valide et démarre en simulation", () => {
     expect(config.mode).toBe('simulation');
   });
