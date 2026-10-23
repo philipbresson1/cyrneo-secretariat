@@ -11,7 +11,7 @@ import { randomUUID } from 'node:crypto';
 import type { Config, Intervention, StatutIntervention } from '../logique/types';
 import { LIBELLES_CATEGORIES, type Categorie } from '../logique/types';
 import { decalageParis, rdvDuJour, type Rdv } from '../lib/agenda';
-import { chercherJournal, creerInterventionManuelle, interventionsOuvertes, majIntervention, type NouvelleDemande } from './stockage';
+import { chercherJournal, creerInterventionManuelle, dernieresRealisees, interventionsEntre, interventionsOuvertes, majIntervention, type NouvelleDemande } from './stockage';
 
 export type Etat = { demarreLe: Date; dernierPassage: Date | null; erreurs: string[]; mode: string };
 
@@ -164,6 +164,24 @@ main.bureau{display:block}
 .compteur{flex:1;background:var(--carte);border-radius:10px;padding:.5rem .9rem;display:flex;align-items:baseline;gap:.6rem}
 .compteur b{font-size:2.2rem}.compteur span{color:var(--doux)}
 .compteur.rouge b{color:var(--urgent)}.compteur.orange b{color:var(--attente)}
+main.cahier{grid-template-columns:1fr 21rem}
+.appels{display:flex;flex-direction:column;gap:0}
+.appel{display:grid;grid-template-columns:4.6rem 1.6rem minmax(9rem,1.1fr) minmax(10rem,1.6fr) minmax(7rem,1fr) 8.5rem;gap:.7rem;align-items:center;padding:.45rem .5rem;border-bottom:1px solid var(--ligne);line-height:1.25}
+.appel.entete{color:var(--doux);font-size:.8rem;text-transform:uppercase;letter-spacing:.04em;border-bottom:2px solid var(--ligne);padding-top:0}
+.appel.urgente{background:#2a1418}.appel.urgente .qui{color:#fca5a5}
+.appel .quand{font-variant-numeric:tabular-nums;color:#a1d8ee;font-weight:600}.appel .quand small{display:block;color:var(--doux);font-weight:500;font-size:.75rem}
+.appel .qui{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.appel .qui small{display:block;color:var(--doux);font-weight:500;font-size:.8rem}
+.appel .quoi,.appel .ou{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.appel .ou{color:var(--doux);font-size:.9rem}
+.statut{display:inline-block;border-radius:6px;padding:.1rem .5rem;font-size:.8rem;font-weight:700;text-align:center}
+.statut.a_planifier{background:#3b2a0a;color:#fbbf24}.statut.coordonnees_demandees{background:#3b2a0a;color:#f59e0b}
+.statut.planifiee{background:#0c2d4a;color:#7dd3fc}.statut.realisee{background:#0b3320;color:#4ade80}.statut.annulee{background:#222;color:#888}
+.appel .bi{display:block;color:var(--doux);font-size:.75rem;margin-top:.15rem}
+.cote{display:flex;flex-direction:column;gap:.7rem;min-height:0}
+.cote section{flex:none}.cote section.extensible{flex:1}
+.action{display:flex;gap:.5rem;padding:.3rem 0;border-bottom:1px solid var(--ligne);line-height:1.25;font-size:.9rem}
+.action b{min-width:1.6rem;text-align:right}.action.rouge b{color:var(--urgent)}.action.orange b{color:var(--attente)}
+.fait{display:flex;gap:.5rem;align-items:baseline;padding:.3rem 0;border-bottom:1px solid var(--ligne);font-size:.88rem;line-height:1.25}
+.fait .ck{color:var(--ok);font-weight:900}.fait .qui{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.fait small{color:var(--doux);white-space:nowrap}
 `;
 
 // Retire les éléments qui débordent d'une liste et affiche « + N autres » : l'écran ne défile jamais.
@@ -203,11 +221,12 @@ function libelleAttente(i: Intervention): string {
   return i.relance_message_id ? 'coordonnées demandées au client par mail' : 'coordonnées manquantes, à obtenir';
 }
 
-function etiquette(i: Intervention): string {
+/** Cahier d'appels : origine et BI ont leur propre colonne (complet = false). */
+function etiquette(i: Intervention, complet = true): string {
   const type = i.type === 'reclamation' ? '<span class="tag">Réclamation</span> ' : i.type === 'devis' ? '<span class="tag devis">Devis</span> ' : '';
   // Demande prise au téléphone (notée dans Dolibarr ou dans une bulle) et bon déjà fait.
-  const tel = i.source === 'dolibarr' || i.source === 'rainbow' ? '📞 ' : '';
-  return `${tel}${type}${i.dolibarr_ref ? `<span class="tag devis">${e(i.dolibarr_ref)}</span> ` : ''}`;
+  const tel = complet && (i.source === 'dolibarr' || i.source === 'rainbow') ? '📞 ' : '';
+  return `${tel}${type}${complet && i.dolibarr_ref ? `<span class="tag devis">${e(i.dolibarr_ref)}</span> ` : ''}`;
 }
 
 function ligneBon(config: Config, i: Intervention): string {
@@ -262,38 +281,91 @@ async function pageEcran(config: Config, url: URL): Promise<string> {
   return pageAffichage('Planning CYRNEO', 'Planning', contenu, zoomDe(url), 'clamp(13px,1.12vw,30px)');
 }
 
-/** Écran des équipes : uniquement les plannings, en grand. */
+/** Écran des équipes : plannings des agents, et à droite les inters en attente de réalisation. */
 async function pageEquipes(config: Config, url: URL): Promise<string> {
-  const colonnes = await colonnesPlanning(config);
-  const contenu = `<main class="equipes" style="--cols:${colonnes.length}">${colonnes.join('')}</main>`;
-  return pageAffichage('Planning équipes', 'Planning des équipes', contenu, zoomDe(url), 'clamp(16px,1.45vw,40px)');
+  const [colonnes, ouvertes] = await Promise.all([colonnesPlanning(config), chargerOuvertes()]);
+  // Ce que les agents ont à faire : interventions pas encore réalisées (ni devis, ni réclamations,
+  // ni demandes encore sans coordonnées).
+  const aRealiser = ouvertes.bons.filter((i) => i.type === 'intervention' && (i.statut === 'a_planifier' || i.statut === 'planifiee'));
+  const contenu = `<main style="--cols:${colonnes.length}">${colonnes.join('')}
+<section><h2>En attente de réalisation <small>${aRealiser.length}</small></h2><div class="liste">${
+    ouvertes.erreur ? `<div class="alerte">${e(ouvertes.erreur)}</div>` : aRealiser.map((i) => ligneBon(config, i)).join('') || '<div class="vide">Rien en attente 👍</div>'
+  }</div></section></main>`;
+  return pageAffichage('Planning équipes', 'Planning des équipes', contenu, zoomDe(url), 'clamp(15px,1.3vw,36px)');
 }
 
-function ficheBon(config: Config, i: Intervention): string {
-  const attente = i.statut === 'coordonnees_demandees';
-  const classe = i.urgence === 'urgente' ? 'urgente' : attente ? 'attente' : '';
-  const lieu = [i.adresse, i.commune].filter(Boolean).join(', ');
-  return `<div class="fiche ${classe}"><div class="l1"><span>${i.urgence === 'urgente' ? '🚨 ' : ''}${e(i.client_nom || 'Client')}</span><span class="age">${depuis(i.cree_le)}</span></div>
-<div class="nat">${etiquette(i)}${e(i.nature || i.resume)}</div>
-${lieu ? `<div class="l2">📍 ${e(lieu)}</div>` : ''}
-<div class="l2">${i.client_telephone ? `📞 ${e(i.client_telephone)} · ` : ''}${e(nomSociete(config, i.societe))} · ${e(i.reference)}${i.dolibarr_ref ? ` · ${e(i.dolibarr_ref)}` : ''}</div>
-${attente ? `<div class="etat">⏳ ${libelleAttente(i)}</div>` : i.date_souhaitee ? `<div class="etat">📅 souhaité : ${e(i.date_souhaitee)}</div>` : ''}</div>`;
+async function chargerOuvertes(): Promise<{ bons: Intervention[]; erreur: string }> {
+  try {
+    const bons = (await interventionsOuvertes()).sort((a, b) => (a.urgence === b.urgence ? a.cree_le.localeCompare(b.cree_le) : a.urgence === 'urgente' ? -1 : 1));
+    return { bons, erreur: '' };
+  } catch (err) {
+    console.error('[ecran]', err instanceof Error ? err.message : err);
+    return { bons: [], erreur: 'Interventions indisponibles pour le moment' };
+  }
 }
 
-/** Écran du bureau : les interventions à prévoir, en grandes fiches, avec les compteurs. */
+const SOURCES: Record<string, string> = { mail: '✉️', rainbow: '💬', dolibarr: '🧾', bureau: '✍️' };
+
+/** Une ligne du cahier d'appels. */
+function ligneAppel(config: Config, i: Intervention): string {
+  const d = new Date(i.cree_le);
+  const aujourdhui = fmtJour.format(d) === fmtJour.format(new Date());
+  const lieu = [i.commune || i.adresse, nomSociete(config, i.societe)].filter(Boolean).join(' · ');
+  return `<div class="appel ${i.urgence === 'urgente' && i.statut !== 'realisee' && i.statut !== 'annulee' ? 'urgente' : ''}">
+<span class="quand">${fmtHeure.format(d)}${aujourdhui ? '' : `<small>${e(fmtJour.format(d))}</small>`}</span>
+<span title="${e(i.source ?? 'mail')}">${SOURCES[i.source ?? 'mail'] ?? '✉️'}</span>
+<span class="qui">${i.urgence === 'urgente' ? '🚨 ' : ''}${e(i.client_nom || 'Client')}<small>${e(i.client_telephone || '—')}</small></span>
+<span class="quoi">${etiquette(i, false)}${e(i.nature || i.resume)}</span>
+<span class="ou">${e(lieu)}</span>
+<span><span class="statut ${i.statut}">${e(STATUTS[i.statut])}</span><span class="bi">${e(i.reference)}${i.dolibarr_ref ? ` · ${e(i.dolibarr_ref)}` : ''}</span></span>
+</div>`;
+}
+
+/** Écran du bureau : compteurs ; au centre le cahier d'appels (demandes entrantes des trois
+ *  derniers jours, toutes origines) ; à droite les actions à mener et les derniers BI finalisés. */
 async function pageBureau(config: Config, url: URL): Promise<string> {
-  const { bons, erreur } = await chargerBons();
   const maintenant = Date.now();
+  const debut = new Date(maintenant - 3 * 86_400_000);
+  const [{ bons, erreur }, entrees, realisees] = await Promise.all([
+    chargerBons(),
+    interventionsEntre(debut, new Date(maintenant + 60_000)).catch(() => null),
+    dernieresRealisees().catch(() => null),
+  ]);
   const urgentes = bons.filter((i) => i.urgence === 'urgente').length;
   const reclamations = bons.filter((i) => i.type === 'reclamation').length;
   const attente = bons.filter((i) => i.statut === 'coordonnees_demandees').length;
   const retard = bons.filter((i) => maintenant - new Date(i.cree_le).getTime() > 24 * 3_600_000).length;
+  const sansBi = bons.filter((i) => i.type === 'intervention' && i.statut === 'a_planifier' && !i.dolibarr_ref).length;
   const compteur = (n: number, libelle: string, classe = '') => `<div class="compteur ${n && classe ? classe : ''}"><b>${n}</b><span>${libelle}</span></div>`;
+
+  const appels = (entrees ?? []).filter((i) => i.statut !== 'annulee').reverse();
+  const action = (n: number, libelle: string, classe: string) => (n ? `<div class="action ${classe}"><b>${n}</b><span>${libelle}</span></div>` : '');
+  const actions =
+    [
+      action(urgentes, 'urgence(s) à caler', 'rouge'),
+      action(reclamations, 'réclamation(s) à traiter', 'rouge'),
+      action(retard, 'demande(s) sans suite depuis + 24 h', 'rouge'),
+      action(attente, 'client(s) à rappeler : coordonnées manquantes', 'orange'),
+      action(sansBi, 'BI à créer dans Dolibarr', 'orange'),
+    ].join('') || '<div class="vide">Rien à faire 👍</div>';
+  const faits =
+    (realisees ?? [])
+      .map(
+        (i) =>
+          `<div class="fait"><span class="ck">✓</span><span class="qui">${e(i.client_nom || 'Client')} · ${e(i.nature || i.resume)}</span><small>${e(i.dolibarr_ref ?? i.reference)} · ${depuis(i.maj_le ?? i.cree_le)}</small></div>`
+      )
+      .join('') || '<div class="vide">Aucun BI finalisé récemment</div>';
+
   const contenu = `<div class="compteurs">${compteur(bons.length, 'à prévoir')}${compteur(urgentes, 'urgentes', 'rouge')}${compteur(retard, 'depuis + 24 h', 'rouge')}${compteur(reclamations, 'réclamations', 'rouge')}${compteur(attente, 'coordonnées manquantes', 'orange')}</div>
-<main class="bureau"><div class="liste grille">${
-    erreur ? `<div class="alerte">${e(erreur)}</div>` : bons.map((i) => ficheBon(config, i)).join('') || '<div class="vide">Tout est planifié 👍</div>'
-  }</div></main>`;
-  return pageAffichage('Bureau CYRNEO', 'Interventions à prévoir', contenu, zoomDe(url), 'clamp(15px,1.3vw,36px)');
+<main class="cahier">
+<section><h2>Cahier d'appels <small>${appels.length} sur 3 jours · ✉️ mail · 💬 Rainbow · 🧾 Dolibarr · ✍️ bureau</small></h2>
+<div class="appel entete"><span>Heure</span><span></span><span>Client</span><span>Demande</span><span>Lieu</span><span>Statut</span></div>
+<div class="liste appels">${erreur || !entrees ? `<div class="alerte">${e(erreur || 'Cahier indisponible pour le moment')}</div>` : appels.map((i) => ligneAppel(config, i)).join('') || '<div class="vide">Aucune demande sur 3 jours</div>'}</div></section>
+<div class="cote">
+<section><h2>À faire</h2>${actions}</section>
+<section class="extensible"><h2>BI finalisés <small>par les agents</small></h2><div class="liste">${faits}</div></section>
+</div></main>`;
+  return pageAffichage('Bureau CYRNEO', 'Bureau', contenu, zoomDe(url), 'clamp(14px,1.15vw,34px)');
 }
 
 function nav(): string {

@@ -174,6 +174,7 @@ export type Intervention = {
   dolibarr_entite?: number | null;
   source?: 'mail' | 'bureau' | 'dolibarr' | 'rainbow';
   cree_le: string;
+  maj_le?: string;
 };
 
 /** Ce que le secrétariat décide de faire d'un mail. L'exécution est séparée de la

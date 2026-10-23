@@ -24,6 +24,7 @@ const journal = {
 vi.mock('./stockage', () => ({
   interventionsOuvertes: async () => [inter],
   interventionsEntre: async () => [inter],
+  dernieresRealisees: async () => [{ ...inter, id: 2, statut: 'realisee', client_nom: 'Mme Leca', dolibarr_ref: 'FI2610-0007', maj_le: '2026-10-23T15:00:00Z' }],
   journalEntre: async () => [journal],
   chercherJournal: async () => [journal],
   majIntervention: vi.fn(async () => inter),
@@ -53,10 +54,14 @@ describe('écran et pages locales', () => {
     expect((await fetch(`${base}/interventions?cle=cle-test`)).status).toBe(200);
     const equipes = await (await fetch(`${base}/equipes?zoom=1.4`)).text();
     expect(equipes).toContain('Planning des équipes');
-    expect(equipes).toContain('calc(clamp(16px,1.45vw,40px) * 1.4)');
-    expect(equipes).not.toContain('Bons à traiter');
+    expect(equipes).toContain('calc(clamp(15px,1.3vw,36px) * 1.4)');
+    expect(equipes).toContain('En attente de réalisation');
+    expect(equipes).toContain('Jean &lt;Martin&gt;');
     const bureau = await (await fetch(`${base}/bureau`)).text();
-    expect(bureau).toContain('Interventions à prévoir');
+    expect(bureau).toContain("Cahier d'appels");
+    expect(bureau).toContain('À faire');
+    expect(bureau).toContain('BI finalisés');
+    expect(bureau).toContain('1</b><span>urgence(s) à caler');
     expect(bureau).toContain('Jean &lt;Martin&gt;');
     expect(bureau).toContain('à prévoir');
     const nouvelle = await fetch(`${base}/interventions/nouvelle?cle=cle-test`, {

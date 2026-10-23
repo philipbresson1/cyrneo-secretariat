@@ -390,6 +390,14 @@ export async function interventionsOuvertes(): Promise<Intervention[]> {
   ) as Intervention[];
 }
 
+/** Dernières interventions passées en « réalisée » (BI clôturés par les agents). */
+export async function dernieresRealisees(nombre = 12): Promise<Intervention[]> {
+  return verifier(
+    await sb.from('interventions').select('*').eq('statut', 'realisee').order('maj_le', { ascending: false }).limit(nombre),
+    'Lecture interventions réalisées'
+  ) as Intervention[];
+}
+
 export async function interventionsEntre(debut: Date, fin: Date): Promise<Intervention[]> {
   return verifier(
     await sb.from('interventions').select('*').gte('cree_le', debut.toISOString()).lt('cree_le', fin.toISOString()).order('cree_le'),
