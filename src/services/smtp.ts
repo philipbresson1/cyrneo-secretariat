@@ -4,6 +4,7 @@
  */
 import nodemailer, { type Transporter } from 'nodemailer';
 import { randomUUID } from 'node:crypto';
+import path from 'node:path';
 import type { Boite, PieceJointe } from '../logique/types';
 import { identifiants } from './imap';
 
@@ -32,6 +33,9 @@ export type Envoi = {
   enReponseA?: string; // Message-ID du mail d'origine
   references?: string[];
   piecesJointes?: PieceJointe[];
+  html?: string;
+  /** Images intégrées au HTML (référencées par cid:…), comme le logo de la signature. */
+  images?: { cid: string; chemin: string }[];
   automatique: boolean; // réponse automatique : en-têtes anti-boucle
 };
 
@@ -50,11 +54,15 @@ export async function envoyer(e: Envoi): Promise<string> {
     to: e.a,
     subject: e.sujet,
     text: e.texte,
+    html: e.html,
     messageId,
     inReplyTo: e.enReponseA,
     references: e.enReponseA ? [...(e.references ?? []), e.enReponseA] : undefined,
     headers: entetes,
-    attachments: (e.piecesJointes ?? []).map((p) => ({ filename: p.nom, content: p.contenu, contentType: p.type })),
+    attachments: [
+      ...(e.piecesJointes ?? []).map((p) => ({ filename: p.nom, content: p.contenu, contentType: p.type })),
+      ...(e.images ?? []).map((i) => ({ filename: path.basename(i.chemin), path: i.chemin, cid: i.cid })),
+    ],
   });
   return messageId;
 }

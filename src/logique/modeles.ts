@@ -4,7 +4,17 @@
  */
 import type { Classification, Intervention, MailRecu, Societe, TypeDemande } from './types';
 
-export type MailSortant = { sujet: string; texte: string };
+import { mailHtml } from './signature';
+
+export type MailSortant = { sujet: string; texte: string; html: string };
+
+const ADRESSE_DEFAUT = 'info@groupecyrneo.com';
+
+/** Assemble la version texte et la version HTML (signature du groupe) d'un même mail. */
+function finaliser(sujet: string, corps: string[], formule: string, s: Societe, adresse: string, mention?: string): MailSortant {
+  const texte = [...corps, '', formule, signature(s), ...(mention ? ['', mention] : [])].join('\n');
+  return { sujet, texte, html: mailHtml(corps, formule, s, adresse, mention) };
+}
 
 function salutation(nom: string): string {
   const n = nom.trim();
@@ -23,7 +33,7 @@ function signature(s: Societe): string {
 
 const MENTION_AUTO = "Ce message part automatiquement dès réception de votre mail : inutile d'y répondre, sauf pour nous apporter une précision.";
 
-export function accuseIntervention(mail: MailRecu, c: Classification, s: Societe, reference: string): MailSortant {
+export function accuseIntervention(mail: MailRecu, c: Classification, s: Societe, reference: string, adresse = ADRESSE_DEFAUT): MailSortant {
   const lignes = [
     salutation(c.contact.nom),
     '',
@@ -35,11 +45,10 @@ export function accuseIntervention(mail: MailRecu, c: Classification, s: Societe
   if (c.urgence === 'urgente') {
     lignes.push('', `Nous avons bien noté que c'est urgent. Si la situation s'aggrave d'ici là, appelez-nous directement au ${s.telephone}.`);
   }
-  lignes.push('', 'Belle journée à vous,', signature(s), '', MENTION_AUTO);
-  return { sujet: prefixeRe(mail.sujet), texte: lignes.join('\n') };
+  return finaliser(prefixeRe(mail.sujet), lignes, 'Belle journée à vous,', s, adresse, MENTION_AUTO);
 }
 
-export function accuseDevis(mail: MailRecu, c: Classification, s: Societe, reference: string): MailSortant {
+export function accuseDevis(mail: MailRecu, c: Classification, s: Societe, reference: string, adresse = ADRESSE_DEFAUT): MailSortant {
   const rappel = c.contact.telephone
     ? `Nous revenons vers vous ${s.delaiDevis}, et nous vous appellerons au ${c.contact.telephone} si nous avons besoin de précisions.`
     : `Nous revenons vers vous ${s.delaiDevis}.`;
@@ -48,13 +57,8 @@ export function accuseDevis(mail: MailRecu, c: Classification, s: Societe, refer
     '',
     `Merci pour votre demande de devis, elle est bien arrivée chez ${s.nom} (référence ${reference}).`,
     rappel,
-    '',
-    'Belle journée à vous,',
-    signature(s),
-    '',
-    MENTION_AUTO,
   ];
-  return { sujet: prefixeRe(mail.sujet), texte: lignes.join('\n') };
+  return finaliser(prefixeRe(mail.sujet), lignes, 'Belle journée à vous,', s, adresse, MENTION_AUTO);
 }
 
 const LIBELLES_MANQUANTS: Record<string, string> = {
@@ -62,7 +66,7 @@ const LIBELLES_MANQUANTS: Record<string, string> = {
   adresse: "l'adresse exacte de l'intervention (rue, commune, et si besoin un repère pour trouver l'accès)",
 };
 
-export function demandeCoordonnees(mail: MailRecu, c: Classification, s: Societe, manquants: string[]): MailSortant {
+export function demandeCoordonnees(mail: MailRecu, c: Classification, s: Societe, manquants: string[], adresse = ADRESSE_DEFAUT): MailSortant {
   const liste = manquants.map((m) => `  - ${LIBELLES_MANQUANTS[m] ?? m}`);
   const lignes = [
     salutation(c.contact.nom),
@@ -73,11 +77,8 @@ export function demandeCoordonnees(mail: MailRecu, c: Classification, s: Societe
     '',
     "Il suffit de répondre directement à ce mail. Dès qu'on a ces éléments, un membre de l'équipe vous rappelle.",
     `Vous pouvez aussi nous appeler au ${s.telephone}.`,
-    '',
-    'À très vite,',
-    signature(s),
   ];
-  return { sujet: prefixeRe(mail.sujet), texte: lignes.join('\n') };
+  return finaliser(prefixeRe(mail.sujet), lignes, 'À très vite,', s, adresse);
 }
 
 /** Champs indispensables pour qu'un agent puisse rappeler et se déplacer. */

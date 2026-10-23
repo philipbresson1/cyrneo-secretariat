@@ -241,6 +241,15 @@ describe('modèles de messages', () => {
     expect(m.texte).toContain('06 12 34 56 78');
     expect(m.texte).toContain("c'est urgent");
   });
+  it('version HTML avec la signature du groupe et le logo intégré', () => {
+    const m = accuseIntervention(mail(), classification(), s, 'INT-2026-0042', 'info@groupecyrneo.com');
+    expect(m.html).toContain('cid:logo-societe@cyrneo');
+    expect(m.html).toContain('Ensemble,</b> préservons la nature');
+    expect(m.html).toContain('mailto:info@groupecyrneo.com');
+    expect(m.html).toContain('INT-2026-0042');
+    expect(m.html).not.toContain('<script');
+  });
+
   it('la demande de coordonnées liste ce qui manque', () => {
     const m = demandeCoordonnees(mail(), classification(), s, ['telephone', 'adresse']);
     expect(m.texte).toContain('deux informations');
