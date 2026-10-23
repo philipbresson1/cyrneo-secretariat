@@ -170,6 +170,9 @@ export type Intervention = {
   notes: string | null;
   dolibarr_ref: string | null;
   dolibarr_tiers_id?: number | null;
+  dolibarr_id?: number | null;
+  dolibarr_entite?: number | null;
+  source?: 'mail' | 'bureau' | 'dolibarr' | 'rainbow';
   cree_le: string;
 };
 

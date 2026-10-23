@@ -204,7 +204,10 @@ function libelleAttente(i: Intervention): string {
 }
 
 function etiquette(i: Intervention): string {
-  return i.type === 'reclamation' ? '<span class="tag">Réclamation</span> ' : i.type === 'devis' ? '<span class="tag devis">Devis</span> ' : '';
+  const type = i.type === 'reclamation' ? '<span class="tag">Réclamation</span> ' : i.type === 'devis' ? '<span class="tag devis">Devis</span> ' : '';
+  // Demande prise au téléphone (notée dans Dolibarr ou dans une bulle) et bon déjà fait.
+  const tel = i.source === 'dolibarr' || i.source === 'rainbow' ? '📞 ' : '';
+  return `${tel}${type}${i.dolibarr_ref ? `<span class="tag devis">${e(i.dolibarr_ref)}</span> ` : ''}`;
 }
 
 function ligneBon(config: Config, i: Intervention): string {

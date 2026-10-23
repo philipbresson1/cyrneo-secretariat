@@ -14,7 +14,15 @@ type SdkRainbow = {
   events: { on: (evt: string, cb: (...args: unknown[]) => void) => void };
   bubbles: { getAll: () => Bulle[] };
   im: { sendMessageToBubbleJid: (message: string, jid: string, lang?: string) => Promise<unknown> };
+  connectedUser?: { jid_im?: string };
 };
+
+/** Message écrit par une personne dans une bulle. */
+export type MessageBulle = { id: string; bulle: string; auteur: string; texte: string };
+
+type MessageSdk = { id?: string; type?: string; content?: string; fromJid?: string; fromBubbleJid?: string; from?: { displayName?: string } };
+
+let ecouteur: ((m: MessageBulle) => void) | null = null;
 
 let sdk: SdkRainbow | null = null;
 let pret: Promise<void> | null = null;
@@ -46,6 +54,14 @@ async function demarrer(): Promise<SdkRainbow> {
     application: { appID: RAINBOW_APP_ID, appSecret: RAINBOW_APP_SECRET },
     logs: { enableConsoleLogs: false, enableFileLogs: false, level: 'error' },
     im: { sendReadReceipt: false },
+  });
+  instance.events.on('rainbow_onmessagereceived', (...args: unknown[]) => {
+    const m = args[0] as MessageSdk;
+    if (!ecouteur || m.type !== 'groupchat' || !m.fromBubbleJid || !m.content?.trim()) return;
+    if (m.fromJid && m.fromJid === instance.connectedUser?.jid_im) return; // nos propres messages
+    const bulle = instance.bubbles.getAll().find((b) => b.jid === m.fromBubbleJid);
+    if (!bulle) return;
+    ecouteur({ id: m.id ?? `${m.fromBubbleJid}-${Date.now()}`, bulle: bulle.name, auteur: m.from?.displayName ?? '', texte: m.content.trim() });
   });
   instance.events.on('rainbow_onerror', () => {
     console.error('[rainbow] erreur de connexion, reconnexion au prochain message');
@@ -93,6 +109,15 @@ export async function publier(nomBulle: string, texte: string): Promise<void> {
   }
   await s.im.sendMessageToBubbleJid(texte, bulle.jid, 'fr');
 }
+
+/** Écoute les messages des bulles (connexion ouverte et gardée). */
+export async function ecouterBulles(cb: (m: MessageBulle) => void): Promise<void> {
+  ecouteur = cb;
+  await connecte();
+}
+
+/** Normalisation des noms de bulles, pour comparer à la config. */
+export const memeBulle = (a: string, b: string): boolean => normaliser(a) === normaliser(b);
 
 export async function arreter(): Promise<void> {
   if (sdk) await sdk.stop().catch(() => undefined);

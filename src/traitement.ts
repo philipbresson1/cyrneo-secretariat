@@ -229,8 +229,9 @@ export async function traiterMail(mail: MailRecu, boite: Boite, config: Config):
           const r = await tiers();
           // Jamais de tiers créé automatiquement : sans tiers reconnu, le bureau fait le bon.
           if (!r?.tiers) throw new Error('tiers non reconnu avec certitude, bon à faire à la main');
-          const bon = await creerBonIntervention(config, entiteDe(config, inter.societe), r.tiers.id, classification, inter.reference);
-          intervention = await db.majIntervention(inter.id, { dolibarr_ref: bon.ref });
+          const entite = entiteDe(config, inter.societe);
+          const bon = await creerBonIntervention(config, entite, r.tiers.id, classification, inter.reference);
+          intervention = await db.majIntervention(inter.id, { dolibarr_ref: bon.ref, dolibarr_id: bon.id, dolibarr_entite: entite });
           return `${bon.ref} (brouillon) pour ${r.tiers.nom}`;
         });
         break;

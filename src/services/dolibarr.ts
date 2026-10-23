@@ -161,6 +161,28 @@ export async function lireTiersEtContacts(config: Config): Promise<{ tiers: Tier
   return { tiers: [...tiers.values()], contacts: [...contacts.values()] };
 }
 
+export type BonLu = { id: number; ref: string; socid: number; description: string; statut: number; creeLe: Date; refClient: string };
+
+/** Derniers bons d'intervention d'une société, du plus récent au plus ancien. */
+export async function lireBonsRecents(config: Config, entite: number, nombre = 100): Promise<BonLu[]> {
+  let liste: Record<string, unknown>[];
+  try {
+    liste = (await appel<Record<string, unknown>[]>(config, entite, 'GET', `/interventions?limit=${nombre}&sortfield=t.rowid&sortorder=DESC`)) ?? [];
+  } catch (e) {
+    if (e instanceof ErreurDolibarr && e.statut === 404) return [];
+    throw e;
+  }
+  return liste.map((b) => ({
+    id: Number(b.id),
+    ref: texte(b.ref),
+    socid: Number(b.socid) || 0,
+    description: texte(b.description),
+    statut: Number(b.statut ?? b.fk_statut ?? b.status) || 0,
+    creeLe: new Date(Number(b.datec ?? b.date_creation ?? 0) * 1000),
+    refClient: texte(b.ref_client),
+  }));
+}
+
 /** Texte du bon : ce qu'un technicien doit savoir en ouvrant la fiche. */
 export function descriptionBon(c: Classification, reference: string): string {
   const lignes = [

@@ -138,3 +138,10 @@ create policy lecture_tiers on dolibarr_tiers for select to authenticated
   using ((select auth.jwt() ->> 'email') = 'philip.bresson1@gmail.com');
 create policy lecture_contacts on dolibarr_contacts for select to authenticated
   using ((select auth.jwt() ->> 'email') = 'philip.bresson1@gmail.com');
+
+-- Demandes prises au téléphone : notées dans Dolibarr (bon) ou dans une bulle Rainbow.
+alter table interventions add column source text not null default 'mail';
+alter table interventions add column dolibarr_id bigint;
+alter table interventions add column dolibarr_entite int;
+create index idx_interventions_dolibarr on interventions (dolibarr_entite, dolibarr_id);
+alter table interventions add constraint interventions_source_check check (source in ('mail', 'bureau', 'dolibarr', 'rainbow'));

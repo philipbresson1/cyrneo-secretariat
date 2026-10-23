@@ -27,7 +27,8 @@ import { lireNouveaux, convertir, testerBoite } from './services/imap';
 import { classer } from './services/classifieur';
 import { genererRapport } from './services/rapport-excel';
 import { envoyer } from './services/smtp';
-import { arreter as arreterRainbow, listerBulles, publier } from './services/rainbow';
+import { arreter as arreterRainbow, ecouterBulles, listerBulles, publier, type MessageBulle } from './services/rainbow';
+import { releverBonsDolibarr, traiterMessageBulle } from './services/appels';
 import { creerBonIntervention, entiteDe, listerEntites, verifierDroits } from './services/dolibarr';
 import { blocRainbow, reconnaitreTiers, synchroDue, synchroniserTiers } from './services/tiers';
 import { envoyerRappels, type BilanRappels } from './services/rappels';
@@ -157,9 +158,35 @@ async function boucle(config: Config): Promise<void> {
   let dernierRapport = '';
   let dernierRappel = '';
   let derniereVerifTiers = 0;
+
+  // Demandes notées dans les bulles : traitées une par une, dans l'ordre d'arrivée.
+  let file = Promise.resolve();
+  const surMessage = (m: MessageBulle) => {
+    file = file.then(() => traiterMessageBulle(config, m, log)).catch((e) => log(`⚠️ Message Rainbow « ${m.bulle} » : ${e instanceof Error ? e.message : String(e)}`));
+  };
+  const dolibarrPret = () => !!config.dolibarr.url && !!process.env.DOLIBARR_API_KEY;
+
   for (;;) {
     const debut = Date.now();
     await passage(config, etat);
+
+    if (config.mode !== 'simulation') {
+      // Ouvre la connexion, ou la rouvre après une coupure.
+      await ecouterBulles(surMessage).catch((e) => log(`⚠️ Écoute Rainbow : ${e instanceof Error ? e.message : String(e)}`));
+    }
+    // Liste des tiers Dolibarr : recopiée chaque semaine (vérifié une fois par heure).
+    if (dolibarrPret() && Date.now() - derniereVerifTiers > 3_600_000) {
+      derniereVerifTiers = Date.now();
+      try {
+        if (await synchroDue()) log(`Tiers Dolibarr synchronisés : ${await synchroniserTiers(config)}`);
+      } catch (e) {
+        log(`⚠️ Synchro des tiers Dolibarr : ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+
+    if (dolibarrPret()) {
+      await releverBonsDolibarr(config, log).catch((e) => log(`⚠️ Bons Dolibarr : ${e instanceof Error ? e.message : String(e)}`));
+    }
 
     const maintenant = new Date();
     const jour = jourParis(maintenant);
@@ -184,16 +211,6 @@ async function boucle(config: Config): Promise<void> {
         afficherRappels(await envoyerRappels(config));
       } catch (e) {
         log(`⚠️ Rappels de rendez-vous : ${e instanceof Error ? e.message : String(e)}`);
-      }
-    }
-
-    // Liste des tiers Dolibarr : recopiée chaque semaine (vérifié une fois par heure).
-    if (config.dolibarr.url && process.env.DOLIBARR_API_KEY && Date.now() - derniereVerifTiers > 3_600_000) {
-      derniereVerifTiers = Date.now();
-      try {
-        if (await synchroDue()) log(`Tiers Dolibarr synchronisés : ${await synchroniserTiers(config)}`);
-      } catch (e) {
-        log(`⚠️ Synchro des tiers Dolibarr : ${e instanceof Error ? e.message : String(e)}`);
       }
     }
 
@@ -298,7 +315,7 @@ async function essaiBon(config: Config, reference: string) {
   let ligneBon = 'Pas de bon : tiers non reconnu avec certitude (aucun tiers n’est créé automatiquement)';
   if (r.tiers) {
     const bon = await creerBonIntervention(config, entite, r.tiers.id, c, reference);
-    await majIntervention(fiche.id, { dolibarr_ref: bon.ref, dolibarr_tiers_id: r.tiers.id });
+    await majIntervention(fiche.id, { dolibarr_ref: bon.ref, dolibarr_id: bon.id, dolibarr_entite: entite, dolibarr_tiers_id: r.tiers.id });
     ligneBon = `Bon ${bon.ref} créé en brouillon\n${config.dolibarr.url}/fichinter/card.php?id=${bon.id}`;
   }
   console.log(ligneBon);

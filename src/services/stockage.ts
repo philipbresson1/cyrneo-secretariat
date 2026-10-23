@@ -169,7 +169,7 @@ export async function creerInterventionManuelle(d: NouvelleDemande): Promise<Int
   const cree = verifier(
     await sb
       .from('interventions')
-      .insert({ ...d, statut: 'a_planifier', resume: d.nature, boite: 'saisie-bureau', mail_message_id: `saisie-${Date.now()}` })
+      .insert({ ...d, statut: 'a_planifier', resume: d.nature, source: 'bureau', boite: 'saisie-bureau', mail_message_id: `saisie-${Date.now()}` })
       .select('*')
       .single(),
     'Création manuelle'
@@ -177,6 +177,64 @@ export async function creerInterventionManuelle(d: NouvelleDemande): Promise<Int
   const reference = referenceIntervention(cree.id, d.type, new Date().getFullYear());
   verifier(await sb.from('interventions').update({ reference }).eq('id', cree.id), 'Référence intervention');
   return { ...cree, reference };
+}
+
+/** Demande reçue par téléphone, saisie dans Dolibarr ou écrite dans une bulle Rainbow. */
+export async function creerInterventionTelephone(
+  d: NouvelleDemande & { source: 'dolibarr' | 'rainbow'; cle: string; resume: string; statut?: StatutIntervention } & Partial<Pick<Intervention, 'dolibarr_id' | 'dolibarr_entite' | 'dolibarr_ref' | 'dolibarr_tiers_id'>>
+): Promise<Intervention> {
+  const { cle, statut = 'a_planifier', ...champs } = d;
+  const cree = verifier(
+    await sb.from('interventions').insert({ ...champs, statut, boite: 'telephone', mail_message_id: cle }).select('*').single(),
+    'Création intervention téléphone'
+  ) as Intervention;
+  const reference = referenceIntervention(cree.id, d.type, new Date().getFullYear());
+  verifier(await sb.from('interventions').update({ reference }).eq('id', cree.id), 'Référence intervention');
+  return { ...cree, reference };
+}
+
+export async function interventionParCle(cle: string): Promise<Intervention | null> {
+  const data = verifier(await sb.from('interventions').select('*').eq('mail_message_id', cle).limit(1), 'Recherche intervention');
+  return (data?.[0] as Intervention) ?? null;
+}
+
+/** Fiche liée à un bon Dolibarr : par son id, sa référence, ou notre référence notée sur le bon. */
+export async function interventionDuBon(entite: number, id: number, ref: string, refClient: string): Promise<Intervention | null> {
+  const ou = [`and(dolibarr_entite.eq.${entite},dolibarr_id.eq.${id})`];
+  if (ref) ou.push(`dolibarr_ref.eq.${ref.replace(/[^\w-]/g, '')}`);
+  if (/^(INT|DEV|REC)-\d{4}-\d+$/.test(refClient)) ou.push(`reference.eq.${refClient}`);
+  const data = verifier(await sb.from('interventions').select('*').or(ou.join(',')).limit(1), 'Recherche intervention du bon');
+  return (data?.[0] as Intervention) ?? null;
+}
+
+/** Fiche ouverte récente du même tiers ou du même téléphone, sans bon Dolibarr : l'appel a
+ *  peut-être déjà été noté de l'autre côté (Rainbow ou Dolibarr). */
+export async function interventionRecenteSemblable(tiersId: number | null, telephone: string, jours = 3): Promise<Intervention | null> {
+  const depuis = new Date(Date.now() - jours * 86_400_000).toISOString();
+  const ouverte = ['coordonnees_demandees', 'a_planifier', 'planifiee'];
+  const tel = telephone.replace(/\D/g, '').slice(-9);
+  const ou = [tiersId ? `dolibarr_tiers_id.eq.${tiersId}` : '', tel.length === 9 ? `client_telephone.ilike.%${tel.slice(0, 1)}%${tel.slice(1, 3)}%${tel.slice(3, 5)}%${tel.slice(5, 7)}%${tel.slice(7)}` : ''].filter(Boolean);
+  if (ou.length === 0) return null;
+  const data = verifier(
+    await sb.from('interventions').select('*').in('statut', ouverte).gte('cree_le', depuis).is('dolibarr_id', null).or(ou.join(',')).order('cree_le', { ascending: false }).limit(1),
+    'Recherche intervention semblable'
+  );
+  return (data?.[0] as Intervention) ?? null;
+}
+
+/** Fiches liées à des bons Dolibarr d'une société (pour suivre leur statut). */
+export async function interventionsAvecBon(entite: number, ids: number[]): Promise<Intervention[]> {
+  if (ids.length === 0) return [];
+  return verifier(await sb.from('interventions').select('*').eq('dolibarr_entite', entite).in('dolibarr_id', ids), 'Lecture interventions avec bon') as Intervention[];
+}
+
+export async function lireSynchro(nom: string): Promise<string | null> {
+  const data = verifier(await sb.from('secretariat_synchro').select('bilan').eq('nom', nom).maybeSingle(), 'Lecture synchro') as { bilan: string } | null;
+  return data?.bilan ?? null;
+}
+
+export async function ecrireSynchro(nom: string, bilan: string): Promise<void> {
+  verifier(await sb.from('secretariat_synchro').upsert({ nom, fait_le: new Date().toISOString(), bilan }), 'Écriture synchro');
 }
 
 export async function majIntervention(id: number, champs: Partial<Omit<Intervention, 'id'>>): Promise<Intervention> {
