@@ -6,7 +6,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import path from 'node:path';
 import type { Config } from '../logique/types';
-import { rdvDuJour, type Rdv } from '../lib/agenda';
+import { estWeekEnd, rdvDuJour, titreComparable, type Rdv } from '../lib/agenda';
 import { estInterne } from '../logique/garde-fous';
 import { trouverTelephones } from '../logique/telephone';
 import { rappelRdv, type InfosRappel } from '../logique/modeles';
@@ -64,11 +64,17 @@ async function resumer(r: Rdv, config: Config): Promise<Resume> {
   return JSON.parse(bloc.text) as Resume;
 }
 
-export type BilanRappels = { envoyes: string[]; sansEmail: number; ignores: number; deja: number; erreurs: string[] };
+export type BilanRappels = { envoyes: string[]; sansEmail: number; ignores: number; deja: number; suites: number; erreurs: string[] };
+
+/** Rendez-vous de demain qui prolonge un chantier déjà en cours aujourd'hui : même événement
+ *  sur plusieurs jours, ou même intitulé repris jour après jour. Le client sait qu'on est là. */
+export function suiteDeChantier(r: Rdv, aujourdhui: Rdv[]): boolean {
+  return aujourdhui.some((x) => x.uid === r.uid || titreComparable(x.titre) === titreComparable(r.titre));
+}
 
 /** Envoie les rappels des rendez-vous de demain. `apercu` : n'envoie rien, liste seulement. */
 export async function envoyerRappels(config: Config, maintenant = new Date(), apercu = false): Promise<BilanRappels> {
-  const bilan: BilanRappels = { envoyes: [], sansEmail: 0, ignores: 0, deja: 0, erreurs: [] };
+  const bilan: BilanRappels = { envoyes: [], sansEmail: 0, ignores: 0, deja: 0, suites: 0, erreurs: [] };
   const boite = config.boites.find((b) => b.id === config.rappels.boite);
   if (!boite) throw new Error(`Boîte d'envoi des rappels inconnue : ${config.rappels.boite}`);
   // Midi demain, heure de Paris : rdvDuJour prend le jour calendaire de cette date.
@@ -80,16 +86,33 @@ export async function envoyerRappels(config: Config, maintenant = new Date(), ap
     const url = process.env[agenda.icsEnv];
     if (!societe || !url) continue;
     let rdvs: Rdv[];
+    let aujourdhui: Rdv[];
     try {
       const r = await fetch(url);
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      rdvs = rdvDuJour(await r.text(), demain).map((x) => ({ ...x, passe: false }));
+      const ics = await r.text();
+      rdvs = rdvDuJour(ics, demain).map((x) => ({ ...x, passe: false }));
+      // La veille, et pour un lundi tout le week-end jusqu'au vendredi : un chantier arrêté le
+      // week-end reprend sans nouveau rappel.
+      aujourdhui = [];
+      for (let k = 1; k <= 3; k++) {
+        const jour = new Date(demain.getTime() - k * 86_400_000);
+        aujourdhui.push(...rdvDuJour(ics, jour));
+        if (!estWeekEnd(jour)) break;
+      }
     } catch (e) {
       bilan.erreurs.push(`${agenda.nom} : ${e instanceof Error ? e.message : String(e)}`);
       continue;
     }
 
+    // Adresses des clients chez qui on est la veille : pas de rappel s'ils nous ont encore demain.
+    const emailsDuJour = new Set(aujourdhui.flatMap((x) => emailsDuRdv(x, config.domainesInternes)));
+
     for (const rdv of rdvs) {
+      if (suiteDeChantier(rdv, aujourdhui)) {
+        bilan.suites += 1;
+        continue;
+      }
       try {
         let email: string | undefined = emailsDuRdv(rdv, config.domainesInternes)[0];
         if (!email) {
@@ -103,6 +126,10 @@ export async function envoyerRappels(config: Config, maintenant = new Date(), ap
           continue;
         }
         const client: string = email;
+        if (emailsDuJour.has(client)) {
+          bilan.suites += 1;
+          continue;
+        }
         if (await rappelDejaEnvoye(rdv.uid)) {
           bilan.deja += 1;
           continue;

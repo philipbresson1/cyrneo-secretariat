@@ -228,7 +228,7 @@ async function boucle(config: Config): Promise<void> {
 }
 
 function afficherRappels(b: BilanRappels): void {
-  log(`Rappels de rendez-vous : ${b.envoyes.length} envoyé(s), ${b.sansEmail} sans adresse mail, ${b.ignores} hors client, ${b.deja} déjà envoyé(s)`);
+  log(`Rappels de rendez-vous : ${b.envoyes.length} envoyé(s), ${b.sansEmail} sans adresse mail, ${b.ignores} hors client, ${b.deja} déjà envoyé(s), ${b.suites} chantier(s) déjà en cours la veille`);
   for (const l of b.envoyes) log(`  ✉️ ${l}`);
   for (const l of b.erreurs) log(`  ⚠️ ${l}`);
 }

@@ -24,6 +24,22 @@ export type ResultatAgenda =
   | { etat: 'erreur'; message: string }
   | { etat: 'ok'; rdvs: Rdv[] };
 
+/** Titre comparable d'un jour à l'autre (casse, accents, ponctuation) : un chantier repris
+ *  chaque jour sous le même intitulé est reconnu comme un seul chantier. */
+export const titreComparable = (t: string): string =>
+  t
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((m) => m.length > 1) // « d’escalier » = « escalier »
+    .join(' ');
+
+/** Samedi ou dimanche, à Paris : un chantier arrêté le week-end reste le même chantier. */
+export function estWeekEnd(date: Date): boolean {
+  return /^(Sat|Sun)/.test(new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Paris', weekday: 'short' }).format(date));
+}
+
 /** Jour calendaire ('YYYY-MM-DD') à Paris, correct de part et d'autre du changement d'heure. */
 export function jourParis(date: Date): string {
   return new Intl.DateTimeFormat('fr-CA', {
@@ -75,6 +91,11 @@ type EvenementIcs = {
   recurrences?: Record<string, EvenementIcs>;
 };
 
+/** 'YYYY-MM-DD' d'une date « journée entière » de node-ical (minuit, heure locale du processus). */
+function jourLocal(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function estJourneeEntiere(evenement: EvenementIcs): boolean {
   // node-ical marque les dates sans heure par la propriété booléenne dateOnly sur le Date lui-même.
   return evenement.start?.dateOnly === true;
@@ -103,7 +124,7 @@ function construire(
 
 /** Extrait les rendez-vous du jour, récurrences développées, annulés exclus, triés. */
 export function rdvDuJour(texteIcs: string, maintenant: Date): Rdv[] {
-  const { debut: debutJour, fin: finJour } = bornesDuJour(maintenant);
+  const { debut: debutJour, fin: finJour, jour } = bornesDuJour(maintenant);
   const analyse = ical.sync.parseICS(texteIcs) as unknown as Record<string, EvenementIcs>;
   const rdvs: Rdv[] = [];
 
@@ -166,8 +187,11 @@ export function rdvDuJour(texteIcs: string, maintenant: Date): Rdv[] {
     if (estJourneeEntiere(evenement)) {
       // Le DTEND d'une journée entière est exclusif : un événement d'un jour
       // va du 24 au 25, il faut donc comparer sur l'intervalle et non l'égalité.
-      const finExclusive = evenement.end ?? new Date(evenement.start.getTime() + 86_400_000);
-      if (evenement.start <= finJour && finExclusive > debutJour) {
+      // node-ical crée ces dates à minuit dans le fuseau du processus (Paris sur le PC, UTC sur
+      // Vercel) : on compare donc des jours calendaires, jamais des instants.
+      const premierJour = jourLocal(evenement.start);
+      const finExclusive = evenement.end ? jourLocal(evenement.end) : jourLocal(new Date(evenement.start.getTime() + 86_400_000));
+      if (premierJour <= jour && finExclusive > jour) {
         rdvs.push(construire(evenement, null, null, maintenant));
       }
       continue;

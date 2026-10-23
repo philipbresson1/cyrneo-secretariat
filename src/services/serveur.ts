@@ -12,7 +12,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { Config, Intervention, StatutIntervention } from '../logique/types';
 import { LIBELLES_CATEGORIES, type Categorie } from '../logique/types';
-import { decalageParis, rdvDuJour, type Rdv } from '../lib/agenda';
+import { decalageParis, estWeekEnd, rdvDuJour, titreComparable, type Rdv } from '../lib/agenda';
 import { chercherJournal, creerInterventionManuelle, dernieresRealisees, historiqueInterventions, interventionsEntre, interventionsOuvertes, majIntervention, type NouvelleDemande } from './stockage';
 
 export type Etat = { demarreLe: Date; dernierPassage: Date | null; erreurs: string[]; mode: string };
@@ -34,7 +34,7 @@ const fmtJour = new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', wee
 const fmtComplet = new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
 
 // --- Agendas : relus au plus toutes les 5 minutes -------------------------------
-type AgendaLu = { env: string; nom: string; couleur: string; aujourdhui: Rdv[]; demain: Rdv[]; erreur: string | null };
+type AgendaLu = { env: string; nom: string; couleur: string; aujourdhui: Rdv[]; demain: Rdv[]; semaine: { date: Date; rdvs: Rdv[] }[]; erreur: string | null };
 let cacheAgendas: { lu: number; agendas: AgendaLu[] } | null = null;
 
 async function lireAgendas(config: Config): Promise<AgendaLu[]> {
@@ -44,15 +44,20 @@ async function lireAgendas(config: Config): Promise<AgendaLu[]> {
   const agendas = await Promise.all(
     config.agendas.map(async (a): Promise<AgendaLu> => {
       const url = process.env[a.icsEnv];
-      if (!url) return { env: a.icsEnv, nom: a.nom, couleur: a.couleur, aujourdhui: [], demain: [], erreur: `variable ${a.icsEnv} absente` };
+      if (!url) return { env: a.icsEnv, nom: a.nom, couleur: a.couleur, aujourdhui: [], demain: [], semaine: [], erreur: `variable ${a.icsEnv} absente` };
       try {
         const r = await fetch(url);
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const ics = await r.text();
-        return { env: a.icsEnv, nom: a.nom, couleur: a.couleur, aujourdhui: rdvDuJour(ics, maintenant), demain: rdvDuJour(ics, demain).map((x) => ({ ...x, passe: false })), erreur: null };
+        // Sept jours glissants : vue hebdo des chantiers (sociétés du bâtiment).
+        const semaine = Array.from({ length: 7 }, (_, n) => {
+          const date = new Date(maintenant.getTime() + n * 86_400_000);
+          return { date, rdvs: n === 0 ? rdvDuJour(ics, maintenant) : rdvDuJour(ics, date).map((x) => ({ ...x, passe: false })) };
+        });
+        return { env: a.icsEnv, nom: a.nom, couleur: a.couleur, aujourdhui: semaine[0].rdvs, demain: semaine[1].rdvs, semaine, erreur: null };
       } catch {
         // Jamais l'URL dans le message : elle donne un accès permanent à l'agenda.
-        return { env: a.icsEnv, nom: a.nom, couleur: a.couleur, aujourdhui: [], demain: [], erreur: 'agenda injoignable' };
+        return { env: a.icsEnv, nom: a.nom, couleur: a.couleur, aujourdhui: [], demain: [], semaine: [], erreur: 'agenda injoignable' };
       }
     })
   );
@@ -166,6 +171,7 @@ section h2 small{font-size:.85rem;color:var(--doux);font-weight:500;white-space:
 .rdv .ag{color:var(--doux);font-size:.75rem}
 .sep{color:var(--doux);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin:.5rem 0 .1rem}
 .plus{color:var(--doux);font-style:italic;padding:.2rem .5rem}
+.jusqua{color:#fbbf24;font-size:.8em;white-space:nowrap}
 .vide{color:var(--doux);font-style:italic}
 .bon{padding:.45rem .6rem;border-left:5px solid var(--ok);background:#0d1a2e;border-radius:6px;line-height:1.25}
 .bon.urgente{border-color:var(--urgent);background:#2a1418}.bon.attente{border-color:var(--attente)}
@@ -264,6 +270,48 @@ function colonnePlanning(titre: string, agendas: AgendaLu[], maintenant: number,
   }${demain.length ? `<div class="sep">Demain · ${demain.length}</div>${demain.map((x) => ligneRdv(x.r, x.a, plusieurs, maintenant)).join('')}` : ''}</div></section>`;
 }
 
+const fmtJourCourt = new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', weekday: 'short', day: 'numeric' });
+const fmtJourLong = new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', weekday: 'long', day: 'numeric', month: 'long' });
+
+/** Planning de la semaine (sept jours glissants) : un chantier qui dure plusieurs jours — même
+ *  événement, ou même intitulé repris jour après jour — n'apparaît qu'une fois, le jour où il
+ *  commence, avec sa date de fin. */
+function colonneSemaine(titre: string, agendas: AgendaLu[], maintenant: number, societe = ''): string {
+  type Bloc = { r: Rdv; a: AgendaLu; premier: number; dernier: number };
+  const blocs: Bloc[] = [];
+  const jours = agendas[0]?.semaine.map((j) => j.date) ?? [];
+  for (let d = 0; d < jours.length; d++) {
+    for (const a of agendas) {
+      for (const r of a.semaine[d]?.rdvs ?? []) {
+        // Suite d'un chantier : la veille, ou le vendredi pour un lundi (week-end sans travaux).
+        const continu = (b: Bloc) => b.dernier < d && jours.slice(b.dernier + 1, d).every(estWeekEnd);
+        const suite = blocs.find((b) => continu(b) && (b.r.uid === r.uid || titreComparable(b.r.titre) === titreComparable(r.titre)));
+        if (suite) suite.dernier = d;
+        else if (!blocs.some((b) => b.dernier === d && b.r.uid === r.uid)) blocs.push({ r, a, premier: d, dernier: d });
+      }
+    }
+  }
+  const plusieurs = agendas.length > 1;
+  const erreurs = agendas.filter((a) => a.erreur).map((a) => `<div class="alerte">${e(a.nom)} : ${e(a.erreur)}</div>`).join('');
+  const parJour = jours
+    .map((date, d) => {
+      const du = blocs.filter((b) => b.premier === d).sort((x, y) => (x.r.debut?.getTime() ?? 0) - (y.r.debut?.getTime() ?? 0));
+      if (!du.length) return '';
+      const libelle = d === 0 ? 'Aujourd’hui' : d === 1 ? 'Demain' : fmtJourLong.format(date);
+      return `<div class="sep">${e(libelle)}</div>${du
+        .map((b) => {
+          const duree = b.dernier > b.premier ? ` <span class="jusqua">→ ${e(b.dernier === jours.length - 1 ? 'toute la semaine' : fmtJourCourt.format(jours[b.dernier]))}</span>` : '';
+          // Un chantier qui continue les jours suivants n'est pas « passé » ce soir.
+          const r = b.dernier > b.premier ? { ...b.r, passe: false } : b.r;
+          return ligneRdv(r, b.a, plusieurs, maintenant).replace('</span></div>', `${duree}</span></div>`);
+        })
+        .join('')}`;
+    })
+    .join('');
+  const chantiers = blocs.length;
+  return `<section><h2><span class="titre">${logo(societe, 'logo-col')}${e(titre)}</span> <small>${chantiers} cette semaine</small></h2><div class="liste">${erreurs}${parJour || '<div class="vide">Rien de prévu cette semaine</div>'}</div></section>`;
+}
+
 /** « demandées » seulement si un mail est vraiment parti ; sinon, en simulation ou sans
  *  réponse automatique, l'info manque et c'est au bureau d'appeler. */
 function libelleAttente(i: Intervention): string {
@@ -355,22 +403,20 @@ async function colonnesSocietes(config: Config, ids: string[]): Promise<string[]
   return ids.flatMap((id) => {
     const envs = config.agendas.filter((a) => a.societe === id).map((a) => a.icsEnv);
     const lus = agendas.filter((a) => envs.includes(a.env));
-    return lus.length ? [colonnePlanning(nomSociete(config, id), lus, maintenant, id)] : [];
+    return lus.length ? [colonneSemaine(nomSociete(config, id), lus, maintenant, id)] : [];
   });
 }
 
-/** Écran réservé à quelques sociétés (bureau du conducteur de travaux, chef d'équipe) :
- *  leurs plannings ; à droite leurs inters à réaliser et leurs devis à faire. */
+/** Écran des sociétés du bâtiment (bureau du conducteur de travaux, chef d'équipe) : leurs
+ *  plannings de la semaine ; à droite les devis restant à faire, une liste par société. */
 async function pageVue(config: Config, url: URL, vue: NonNullable<Config['ecran']['vues']>[number]): Promise<string> {
   const [colonnes, ouvertes] = await Promise.all([colonnesSocietes(config, vue.societes), chargerOuvertes()]);
-  const siennes = ouvertes.bons.filter((i) => vue.societes.includes(i.societe));
-  const aRealiser = siennes.filter((i) => i.type !== 'devis' && (i.statut === 'a_planifier' || i.statut === 'planifiee'));
-  const devis = siennes.filter((i) => i.type === 'devis');
-  const liste = (l: Intervention[], vide: string) =>
-    ouvertes.erreur ? `<div class="alerte">${e(ouvertes.erreur)}</div>` : l.map((i) => ligneBon(config, i)).join('') || `<div class="vide">${vide}</div>`;
-  const contenu = `<main style="--cols:${colonnes.length}">${colonnes.join('')}
-<div class="cote"><section class="extensible"><h2>À réaliser <small>${aRealiser.length}</small></h2><div class="liste">${liste(aRealiser, 'Rien en attente 👍')}</div></section>
-<section class="extensible"><h2>Devis à faire <small>${devis.length}</small></h2><div class="liste">${liste(devis, 'Aucun devis en attente')}</div></section></div></main>`;
+  const devis = vue.societes.map((id) => {
+    const l = ouvertes.bons.filter((i) => i.societe === id && i.type === 'devis');
+    const contenu = ouvertes.erreur ? `<div class="alerte">${e(ouvertes.erreur)}</div>` : l.map((i) => ligneBon(config, i)).join('') || '<div class="vide">Aucun devis en attente</div>';
+    return `<section class="extensible"><h2><span class="titre">${logo(id, 'logo-col')}Devis à faire</span> <small>${e(nomSociete(config, id))} · ${l.length}</small></h2><div class="liste">${contenu}</div></section>`;
+  });
+  const contenu = `<main style="--cols:${colonnes.length}">${colonnes.join('')}<div class="cote">${devis.join('')}</div></main>`;
   // En-tête court (les sociétés sont sur les colonnes) : l'horloge doit tenir sur la ligne.
   return pageAffichage(config, vue.titre, vue.chemin.slice(1).replace(/^./, (c) => c.toUpperCase()), contenu, zoomDe(url), 'clamp(15px,1.3vw,36px)', vue.chemin);
 }

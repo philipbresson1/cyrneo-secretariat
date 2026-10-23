@@ -3,7 +3,8 @@ import exemple from '../../config.exemple.json';
 import { validerConfig } from '../logique/config';
 import { rappelRdv } from '../logique/modeles';
 import type { Rdv } from '../lib/agenda';
-import { emailsDuRdv } from './rappels';
+import { emailsDuRdv, suiteDeChantier } from './rappels';
+import { rdvDuJour } from '../lib/agenda';
 
 const config = validerConfig(exemple);
 const rdv = (p: Partial<Rdv>): Rdv => ({ titre: '', debut: null, fin: null, journeeEntiere: false, lieu: null, passe: false, description: '', uid: 'x', ...p });
@@ -31,5 +32,29 @@ describe('rappels de rendez-vous', () => {
     const m = rappelRdv({ nom: '', objet: 'le curage de votre réseau', debut: null, lieu: '' }, new Date('2026-10-24T10:00:00Z'), sa);
     expect(m.texte).toContain('samedi 24 octobre, dans la journée');
     expect(m.texte).not.toContain('Adresse :');
+  });
+
+  it('pas de rappel pour la suite d’un chantier de plusieurs jours', () => {
+    const ics = [
+      'BEGIN:VCALENDAR', 'VERSION:2.0',
+      'BEGIN:VEVENT', 'UID:chantier-1', 'DTSTART;VALUE=DATE:20261026', 'DTEND;VALUE=DATE:20261031', 'SUMMARY:Ravalement façade - Copro Les Oliviers', 'END:VEVENT',
+      'BEGIN:VEVENT', 'UID:j1', 'DTSTART;TZID=Europe/Paris:20261026T080000', 'DTEND;TZID=Europe/Paris:20261026T170000', 'SUMMARY:Peinture cage escalier - Mme Leca', 'END:VEVENT',
+      'BEGIN:VEVENT', 'UID:j2', 'DTSTART;TZID=Europe/Paris:20261027T080000', 'DTEND;TZID=Europe/Paris:20261027T170000', 'SUMMARY:Peinture cage d’escalier – Mme LECA', 'END:VEVENT',
+      'BEGIN:VEVENT', 'UID:j3', 'DTSTART;TZID=Europe/Paris:20261027T140000', 'DTEND;TZID=Europe/Paris:20261027T150000', 'SUMMARY:Vidange fosse - M. Errard', 'END:VEVENT',
+      'END:VCALENDAR',
+    ].join('\r\n');
+    const lundi = rdvDuJour(ics, new Date('2026-10-26T10:00:00Z'));
+    const mardi = rdvDuJour(ics, new Date('2026-10-27T10:00:00Z'));
+    const suite = (titre: RegExp) => suiteDeChantier(mardi.find((r) => titre.test(r.titre))!, lundi);
+    expect(suite(/Ravalement/)).toBe(true); // même événement sur toute la semaine
+    expect(suite(/Leca/i)).toBe(true); // même chantier repris d'un jour à l'autre
+    expect(suite(/Errard/)).toBe(false); // nouveau client : rappel
+  });
+
+  it('journée entière : la date de fin (exclusive) n’est pas un jour de chantier', () => {
+    const ics = ['BEGIN:VCALENDAR', 'BEGIN:VEVENT', 'UID:c', 'DTSTART;VALUE=DATE:20261026', 'DTEND;VALUE=DATE:20261029', 'SUMMARY:Ravalement', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+    expect(rdvDuJour(ics, new Date('2026-10-28T10:00:00Z'))).toHaveLength(1);
+    expect(rdvDuJour(ics, new Date('2026-10-29T10:00:00Z'))).toHaveLength(0);
+    expect(rdvDuJour(ics, new Date('2026-10-25T22:30:00Z'))).toHaveLength(0); // dimanche 23 h 30 à Paris
   });
 });
