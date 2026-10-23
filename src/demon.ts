@@ -7,6 +7,7 @@
  *   npm start -- rapport [AAAA-MM-JJ]   génère l'Excel du jour (ou d'une date)
  *   npm start -- bulles        liste les bulles Rainbow visibles par le compte
  *   npm start -- dolibarr      vérifie l'accès Dolibarr, société par société
+ *   npm start -- essai-bon REF bon Dolibarr + message bulle de test pour une fiche existante
  *   npm start -- verifier      teste chaque branchement : base, Claude, boîtes mail, agendas
  *   npm start -- rappels [apercu]   rappels des rendez-vous de demain (apercu : n'envoie rien)
  */
@@ -16,7 +17,7 @@ const env = chargerEnv({ path: '.env.local', quiet: true });
 import { readFile, access, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { simpleParser } from 'mailparser';
-import type { Config } from './logique/types';
+import type { Classification, Config } from './logique/types';
 import { appliquerEnv, validerConfig } from './logique/config';
 import { raisonDeNePasRepondre } from './logique/garde-fous';
 import { decider } from './logique/decision';
@@ -25,11 +26,11 @@ import { lireNouveaux, convertir, testerBoite } from './services/imap';
 import { classer } from './services/classifieur';
 import { genererRapport } from './services/rapport-excel';
 import { envoyer } from './services/smtp';
-import { arreter as arreterRainbow, listerBulles } from './services/rainbow';
-import { listerEntites, verifierDroits } from './services/dolibarr';
+import { arreter as arreterRainbow, listerBulles, publier } from './services/rainbow';
+import { creerBonIntervention, entiteDe, listerEntites, trouverOuCreerClient, verifierDroits } from './services/dolibarr';
 import { envoyerRappels, type BilanRappels } from './services/rappels';
 import { demarrerServeur, type Etat } from './services/serveur';
-import { ecrireCurseur, lireCurseur, noterEnvoi, testerBase } from './services/stockage';
+import { ecrireCurseur, interventionParReference, lireCurseur, majIntervention, noterEnvoi, testerBase } from './services/stockage';
 import Anthropic from '@anthropic-ai/sdk';
 import { abandonner, traiterMail } from './traitement';
 
@@ -257,6 +258,44 @@ async function verifier(config: Config): Promise<void> {
   }
 }
 
+/** Test de bout en bout sur une fiche existante : bon d'intervention Dolibarr (brouillon) et
+ *  message dans la bulle de test. Écrit dans Dolibarr même si dolibarr.actif = false. */
+async function essaiBon(config: Config, reference: string) {
+  const fiche = await interventionParReference(reference);
+  if (!fiche) throw new Error(`Aucune fiche ${reference} dans la base`);
+  const s = config.societes.find((x) => x.id === fiche.societe);
+  if (!s) throw new Error(`Société inconnue : ${fiche.societe}`);
+  const c: Classification = {
+    categorie: 'demande_intervention',
+    societe: fiche.societe,
+    urgence: fiche.urgence,
+    resume: fiche.resume,
+    nature: fiche.nature,
+    dateSouhaitee: fiche.date_souhaitee,
+    inspectionCamera: false,
+    contact: { nom: fiche.client_nom, telephone: fiche.client_telephone, email: fiche.client_email, adresse: fiche.adresse, commune: fiche.commune },
+  };
+  const entite = entiteDe(config, fiche.societe);
+  console.log(`${reference} · ${s.nom} → entité Dolibarr ${entite}`);
+  const client = await trouverOuCreerClient(config, entite, c);
+  console.log(`✓ Client : ${client.nom} (n° ${client.id}${client.cree ? ', créé' : ', existant'})`);
+  const bon = await creerBonIntervention(config, entite, client.id, c, reference);
+  console.log(`✓ Bon d'intervention : ${bon.ref} (brouillon)`);
+  await majIntervention(fiche.id, { dolibarr_ref: bon.ref });
+  const texte = [
+    `🧪 Test Dolibarr — ${s.nom}`,
+    `Bon ${bon.ref} créé en brouillon pour ${reference}`,
+    `Client : ${client.nom}${client.cree ? ' (nouveau tiers)' : ''}`,
+    `${[fiche.adresse, fiche.commune].filter(Boolean).join(', ')}`,
+    `${fiche.nature}${fiche.date_souhaitee ? ` · souhaité ${fiche.date_souhaitee}` : ''}`,
+    `${config.dolibarr.url}/fichinter/card.php?id=${bon.id}`,
+  ].filter(Boolean).join('\n');
+  await publier(config.test.bulleRainbow, texte);
+  console.log(`✓ Message publié dans « ${config.test.bulleRainbow} »`);
+  await arreterRainbow();
+  process.exit(0);
+}
+
 async function principal() {
   const [commande = 'demarrer', argument] = process.argv.slice(2);
   const config = await chargerConfig();
@@ -284,6 +323,8 @@ async function principal() {
     case 'rappels':
       afficherRappels(await envoyerRappels(config, new Date(), argument === 'apercu'));
       return;
+    case 'essai-bon':
+      return essaiBon(config, argument ?? 'INT-2026-0006');
     case 'dolibarr': {
       console.log(`Dolibarr : ${config.dolibarr.url}\n`);
       let noms = new Map<number, string>();
@@ -311,7 +352,7 @@ async function principal() {
       return;
     }
     default:
-      throw new Error(`Commande inconnue « ${commande} » (demarrer, une-fois, essai, rapport, bulles, dolibarr, verifier, rappels)`);
+      throw new Error(`Commande inconnue « ${commande} » (demarrer, une-fois, essai, essai-bon, rapport, bulles, dolibarr, verifier, rappels)`);
   }
 }
 

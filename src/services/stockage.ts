@@ -261,6 +261,11 @@ export async function interventionParExpediteur(mail: MailRecu): Promise<Interve
   return data && data.length > 0 ? (data[0] as Intervention) : null;
 }
 
+export async function interventionParReference(reference: string): Promise<Intervention | null> {
+  const data = verifier(await sb.from('interventions').select('*').eq('reference', reference).maybeSingle(), 'Lecture intervention');
+  return (data as Intervention) ?? null;
+}
+
 export async function interventionParId(id: number): Promise<Intervention | null> {
   const data = verifier(await sb.from('interventions').select('*').eq('id', id).maybeSingle(), 'Lecture intervention');
   return (data as Intervention) ?? null;
