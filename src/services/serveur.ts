@@ -123,12 +123,12 @@ function depuis(iso: string, maintenant = Date.now()): string {
 const STYLE_ECRAN = `
 :root{--fond:#0b1526;--carte:#13233b;--texte:#f1f5f9;--doux:#8fa3bd;--ligne:#22385a;--urgent:#ef4444;--attente:#f59e0b;--ok:#22c55e}
 *{box-sizing:border-box;margin:0}
-html{font-size:clamp(11px,0.9vw,24px)}
+html{font-size:clamp(13px,1.12vw,30px)}
 body{height:100vh;overflow:hidden;background:var(--fond);color:var(--texte);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;display:flex;flex-direction:column}
-header{display:flex;justify-content:space-between;align-items:baseline;padding:.8rem 1.4rem;border-bottom:1px solid var(--ligne)}
+header{display:flex;justify-content:space-between;align-items:baseline;padding:.5rem 1.2rem;border-bottom:1px solid var(--ligne)}
 header h1{font-size:1.6rem;font-weight:700}header h1 span{color:#a1d8ee}
 #h{font-size:1.8rem;font-variant-numeric:tabular-nums;color:#a1d8ee}
-main{flex:1;min-height:0;display:grid;grid-template-columns:repeat(var(--cols),1fr) 1.15fr;gap:1rem;padding:1rem 1.4rem}
+main{flex:1;min-height:0;display:grid;grid-template-columns:repeat(var(--cols),1fr) 1.15fr;gap:.7rem;padding:.7rem 1.2rem}
 section{min-height:0;display:flex;flex-direction:column;background:var(--carte);border-radius:12px;padding:.9rem 1rem}
 section h2{font-size:1.2rem;margin-bottom:.6rem;display:flex;justify-content:space-between;align-items:baseline}
 section h2 small{font-size:.85rem;color:var(--doux);font-weight:500}
@@ -137,7 +137,7 @@ section h2 small{font-size:.85rem;color:var(--doux);font-weight:500}
 .rdv.passe{opacity:.38}.rdv.encours{background:#173457;box-shadow:inset 0 0 0 1px #3fa7d6}
 .rdv .h{min-width:3.1rem;font-variant-numeric:tabular-nums;color:#a1d8ee;font-weight:600}
 .rdv .t{overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
-.rdv .ag{color:var(--doux);font-size:.8rem}
+.rdv .ag{color:var(--doux);font-size:.75rem}
 .sep{color:var(--doux);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin:.5rem 0 .1rem}
 .plus{color:var(--doux);font-style:italic;padding:.2rem .5rem}
 .vide{color:var(--doux);font-style:italic}
