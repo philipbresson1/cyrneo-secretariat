@@ -49,6 +49,10 @@ export function validerConfig(brut: unknown): Config {
   // Champs ajoutés après coup : une config plus ancienne reste valable.
   c.dossiers.vehicules ||= 'donnees/vehicules';
   c.bulles ??= { vehicules: '' };
+  // Une adresse d'exemple recopiée telle quelle ferait partir les mails de test dans le vide.
+  if (/@(exemple|example)\.(fr|com|org)$|^ton\.adresse@|^votre/i.test(c.test.adresse)) {
+    erreurs.push(`test.adresse « ${c.test.adresse} » est une adresse d'exemple : mettez une vraie adresse (SECRETARIAT_ADRESSE_TEST dans .env.local)`);
+  }
   if (c.mode === 'test' && (!c.test.bulleRainbow || !c.test.adresse)) {
     erreurs.push('mode test : renseigner test.bulleRainbow et test.adresse (tout y sera envoyé à la place des vrais destinataires)');
   }
