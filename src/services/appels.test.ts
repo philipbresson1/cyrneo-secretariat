@@ -14,6 +14,7 @@ const db = vi.hoisted(() => ({
   interventionParCle: vi.fn(async () => null),
   devisAvecProposition: vi.fn(async () => [] as unknown[]),
   devisOuvertsSansProposition: vi.fn(async () => [] as unknown[]),
+  remplacerDevisSignes: vi.fn(),
   devisEnCoursDuTiers: vi.fn(async () => null),
 }));
 const bons = vi.hoisted(() => ({ liste: [] as unknown[], propositions: [] as { id: number; ref: string; socid: number; statut: number; creeLe: Date; signeLe: Date | null; libelle: string; refClient: string }[] }));
@@ -148,9 +149,9 @@ describe('aller-retour Dolibarr', () => {
     await releverDevisDolibarr({ ...config, dolibarr: { ...config.dolibarr, entites: { 'sud-travaux': 3 } } }, () => {});
     expect(db.creerInterventionTelephone).not.toHaveBeenCalled(); // Dolibarr ne crée jamais de devis à faire
     expect(db.majIntervention).toHaveBeenCalledWith(12, expect.objectContaining({ dolibarr_id: 40, dolibarr_ref: 'PR2610-0040', statut: 'planifiee' }));
-    const signes = JSON.parse(db.ecrireSynchro.mock.calls.at(-1)![1] as string);
-    expect(db.ecrireSynchro.mock.calls.at(-1)![0]).toBe('devis_signes:3');
-    expect(signes).toEqual([{ ref: 'PR2610-0041', societe: 'sud-travaux', tiersNom: '', libelle: 'Regard', signeLe: '2026-10-20T10:00:00.000Z' }]);
+    expect(db.remplacerDevisSignes).toHaveBeenCalledWith(3, [
+      { id: 41, ref: 'PR2610-0041', societe: 'sud-travaux', tiers_id: 6, tiers_nom: '', libelle: 'Regard', signe_le: '2026-10-20T10:00:00.000Z' },
+    ]);
   });
 
   it('proposition déjà reliée : la demande suit son statut (signée → acceptée)', async () => {

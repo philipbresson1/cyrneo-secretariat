@@ -24,7 +24,7 @@ const journal = {
 vi.mock('./stockage', () => ({
   interventionsOuvertes: async () => [inter],
   interventionsEntre: async () => [inter],
-  lireSynchro: async (nom: string) => (nom === 'devis_signes:3' ? JSON.stringify([{ ref: 'PR2610-0050', societe: 'sud-travaux', tiersNom: 'SCI Le Lazaret', libelle: 'Réseau EU parking', signeLe: '2026-10-20T10:00:00Z' }]) : null),
+  devisSignes: async () => [{ ref: 'PR2610-0050', societe: 'sud-travaux', tiers_nom: 'SCI Le Lazaret', libelle: 'Réseau EU parking', signe_le: '2026-10-20T10:00:00Z' }],
   dernieresRealisees: async () => [{ ...inter, id: 2, statut: 'realisee', client_nom: 'Mme Leca', dolibarr_ref: 'FI2610-0007', maj_le: '2026-10-23T15:00:00Z' }],
   journalEntre: async () => [journal],
   chercherJournal: async () => [journal],

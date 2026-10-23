@@ -22,9 +22,6 @@ type Journal = (texte: string) => void;
 
 const STATUT_DEVIS: Record<number, Intervention['statut']> = { 0: 'a_planifier', 1: 'planifiee', 2: 'realisee', 3: 'annulee', 4: 'realisee' };
 
-/** Devis signé dans Dolibarr, pour l'écran Travaux (jamais de montant : écran vu par les agents). */
-export type DevisSigne = { ref: string; societe: string; tiersNom: string; libelle: string; signeLe: string | null };
-
 /** Devis : les devis à faire sont notés dans Rainbow (ou reçus par mail) ; Dolibarr ne sert qu'à
  *  les finaliser. Quand une proposition apparaît pour le même client, la demande lui est reliée,
  *  puis suit son statut : validée → envoyée (sort des devis à faire), signée → acceptée,
@@ -55,10 +52,13 @@ export async function releverDevisDolibarr(config: Config, log: Journal): Promis
       log(`${demande.reference} reliée au devis Dolibarr ${p.ref}`);
     }
 
-    const signes: DevisSigne[] = recentes
-      .filter((p) => p.statut === 2)
-      .map((p) => ({ ref: p.ref, societe: s.id, tiersNom: idx.tiers.get(p.socid)?.nom ?? '', libelle: p.libelle, signeLe: p.signeLe?.toISOString() ?? null }));
-    await db.ecrireSynchro(`devis_signes:${entite}`, JSON.stringify(signes));
+    // Devis signés (jamais de montant : l'écran Travaux est vu par les agents).
+    await db.remplacerDevisSignes(
+      entite,
+      recentes
+        .filter((p) => p.statut === 2)
+        .map((p) => ({ id: p.id, ref: p.ref, societe: s.id, tiers_id: p.socid || null, tiers_nom: idx.tiers.get(p.socid)?.nom ?? '', libelle: p.libelle, signe_le: p.signeLe?.toISOString() ?? null }))
+    );
   }
 }
 

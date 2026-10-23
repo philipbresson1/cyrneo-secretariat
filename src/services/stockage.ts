@@ -265,6 +265,23 @@ export async function devisOuvertsSansProposition(societe: string): Promise<Inte
   ) as Intervention[];
 }
 
+/** Devis signés (propositions Dolibarr) d'une société : remplace la liste de cette entité. */
+export async function remplacerDevisSignes(
+  entite: number,
+  devis: { id: number; ref: string; societe: string; tiers_id: number | null; tiers_nom: string; libelle: string; signe_le: string | null }[]
+): Promise<void> {
+  const vu = new Date().toISOString();
+  if (devis.length) verifier(await sb.from('dolibarr_devis_signes').upsert(devis.map((d) => ({ ...d, entite, vu_le: vu }))), 'Écriture devis signés');
+  verifier(await sb.from('dolibarr_devis_signes').delete().eq('entite', entite).lt('vu_le', vu), 'Nettoyage devis signés');
+}
+
+export async function devisSignes(societes: string[]): Promise<{ ref: string; societe: string; tiers_nom: string; libelle: string; signe_le: string | null }[]> {
+  return verifier(
+    await sb.from('dolibarr_devis_signes').select('ref, societe, tiers_nom, libelle, signe_le').in('societe', societes).order('signe_le', { ascending: true }),
+    'Lecture devis signés'
+  ) as { ref: string; societe: string; tiers_nom: string; libelle: string; signe_le: string | null }[];
+}
+
 export async function lireSynchro(nom: string): Promise<string | null> {
   const data = verifier(await sb.from('secretariat_synchro').select('bilan').eq('nom', nom).maybeSingle(), 'Lecture synchro') as { bilan: string } | null;
   return data?.bilan ?? null;

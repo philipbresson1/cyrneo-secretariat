@@ -150,3 +150,20 @@ alter table interventions add constraint interventions_source_check check (sourc
 alter table dolibarr_tiers add column siret text not null default '';
 alter table dolibarr_tiers add column tva_intra text not null default '';
 alter table dolibarr_tiers add column code_fournisseur text not null default '';
+
+-- Devis signés dans Dolibarr (écran Travaux : « devis acceptés à planifier »), sans montant.
+create table dolibarr_devis_signes (
+  entite int not null,
+  id bigint not null,
+  ref text not null,
+  societe text not null,
+  tiers_id bigint,
+  tiers_nom text not null default '',
+  libelle text not null default '',
+  signe_le timestamptz,
+  vu_le timestamptz not null default now(),
+  primary key (entite, id)
+);
+alter table dolibarr_devis_signes enable row level security;
+create policy lecture_devis_signes on dolibarr_devis_signes for select to authenticated
+  using ((select auth.jwt() ->> 'email') = 'philip.bresson1@gmail.com');
