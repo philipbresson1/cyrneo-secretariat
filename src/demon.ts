@@ -197,7 +197,16 @@ async function verifier(config: Config): Promise<void> {
     console.log(`✗ Fichier .env.local introuvable dans ${path.resolve('.')}. Fichiers trouvés : ${presents.join(', ') || 'aucun'}`);
     console.log('  Si vous voyez « .env.local.txt », renommez-le : ren .env.local.txt .env.local\n');
   } else {
-    console.log(`✓ Fichier .env.local : ${Object.keys(env.parsed ?? {}).length} variable(s) lue(s)\n`);
+    console.log(`✓ Fichier .env.local : ${Object.keys(env.parsed ?? {}).length} variable(s) lue(s)`);
+    // Pièges courants : une variable collée deux fois (la dernière l'emporte) ou laissée à « xxxx ».
+    const vues = new Map<string, number>();
+    for (const l of (await readFile('.env.local', 'utf8')).split(/\r?\n/)) {
+      const m = /^\s*([A-Z0-9_]+)\s*=/.exec(l);
+      if (m) vues.set(m[1], (vues.get(m[1]) ?? 0) + 1);
+    }
+    for (const [cle, n] of vues) if (n > 1) console.log(`⚠ ${cle} apparaît ${n} fois : seule la dernière ligne compte, supprimez les autres`);
+    for (const [cle, val] of Object.entries(env.parsed ?? {})) if (/x{4}/i.test(val)) console.log(`⚠ ${cle} contient encore « xxxx » (valeur du modèle à remplacer)`);
+    console.log('');
   }
   await ligne('Base Supabase', async () => {
     if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE) throw new Error('NEXT_PUBLIC_SUPABASE_URL ou SUPABASE_SERVICE_ROLE absente de .env.local');
