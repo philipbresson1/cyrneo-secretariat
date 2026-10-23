@@ -92,7 +92,7 @@ table{width:100%;border-collapse:collapse;font-size:.9rem}th,td{text-align:left;
 th{color:var(--doux);font-weight:600}input,select,button{font:inherit;padding:.3rem .5rem;border-radius:6px;border:1px solid var(--ligne);background:#0b1222;color:var(--texte)}
 button{background:#2563eb;border-color:#2563eb;cursor:pointer}.vide{color:var(--doux);font-style:italic}
 .erreur{color:var(--urgent)}
-@media (max-width:800px){.barre{flex-wrap:wrap;gap:.5rem}.nav{overflow-x:auto;white-space:nowrap}.nav a{margin:0 .2rem}.carte{overflow-x:auto}}
+@media (max-width:800px){.barre{flex-wrap:wrap;gap:.5rem;position:sticky;top:0;z-index:50;background:var(--fond);padding-top:calc(1rem + env(safe-area-inset-top))}.nav{overflow-x:auto;white-space:nowrap}.nav a{margin:0 .2rem}.carte{overflow-x:auto}}
 .nav a{margin-left:1rem;text-decoration:none;padding:.3rem .7rem;border-radius:8px}.nav a.ici{background:#2563eb;color:#fff}
 .filtres a{margin-right:.8rem}
 `;
@@ -132,7 +132,7 @@ self.addEventListener('fetch',e=>{if(e.request.mode!=='navigate')return;
 e.respondWith(fetch(e.request).catch(()=>new Response('<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width"><body style="background:#0b1526;color:#f1f5f9;font-family:system-ui;padding:2rem"><h1>Cyrnehome</h1><p>Pas de connexion. La page se rechargera dès le retour du réseau.</p><script>addEventListener("online",()=>location.reload())</script>',{headers:{'Content-Type':'text/html; charset=utf-8'}})));});`;
 
 function page(titre: string, corps: string, rafraichir = 0): string {
-  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 ${rafraichir ? `<meta http-equiv="refresh" content="${rafraichir}">` : ''}${TETE_APPLI}<title>${e(titre)}</title><style>${STYLE}</style></head><body>${corps}</body></html>`;
 }
 
@@ -268,7 +268,9 @@ main.cahier{grid-template-columns:1fr 21rem}
 @media (max-width:800px){
 html{font-size:15px!important}
 body{height:auto;min-height:100vh;overflow:auto}
-header{flex-wrap:wrap;gap:.4rem;padding:.5rem .7rem}
+/* En-tête et menu figés en haut, sur fond plein (pas de flou sous la barre d'état de l'iPhone). */
+header{flex-wrap:wrap;gap:.4rem;padding:calc(.5rem + env(safe-area-inset-top)) calc(.7rem + env(safe-area-inset-right)) .5rem calc(.7rem + env(safe-area-inset-left));position:sticky;top:0;z-index:50;background:var(--fond);box-shadow:0 6px 12px -8px rgba(0,0,0,.6)}
+body{padding-bottom:env(safe-area-inset-bottom)}
 header h1{font-size:1.15rem}header h1 img{height:1.9rem}
 #h{font-size:.95rem}
 header nav.pages{order:3;width:100%;margin:0;overflow-x:auto;padding-bottom:.2rem}
@@ -413,7 +415,7 @@ function zoomDe(url: URL): number {
 
 function pageAffichage(config: Config, titre: string, sousTitre: string, contenu: string, zoom: number, base: string, chemin = ''): string {
   const corps = `<header><h1>${logo('cyrneo', '')}Groupe <span>CYRNEO</span> · ${e(sousTitre)}</h1><nav class="pages">${liensPages(config, chemin)}</nav><div id="h"></div></header>${contenu}<script>${SCRIPT_ECRAN}</script>`;
-  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="60">${TETE_APPLI}<title>${e(titre)}</title><style>${STYLE_ECRAN}html{font-size:calc(${base} * ${zoom})}</style></head><body>${corps}</body></html>`;
+  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta http-equiv="refresh" content="60">${TETE_APPLI}<title>${e(titre)}</title><style>${STYLE_ECRAN}html{font-size:calc(${base} * ${zoom})}</style></head><body>${corps}</body></html>`;
 }
 
 async function chargerBons(): Promise<{ bons: Intervention[]; erreur: string }> {
