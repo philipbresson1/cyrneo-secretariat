@@ -390,6 +390,11 @@ export async function interventionsOuvertes(): Promise<Intervention[]> {
   ) as Intervention[];
 }
 
+/** Historique : toutes les interventions, les plus récentes d'abord. */
+export async function historiqueInterventions(nombre = 300): Promise<Intervention[]> {
+  return verifier(await sb.from('interventions').select('*').order('cree_le', { ascending: false }).limit(nombre), 'Lecture historique') as Intervention[];
+}
+
 /** Dernières interventions passées en « réalisée » (BI clôturés par les agents). */
 export async function dernieresRealisees(nombre = 12): Promise<Intervention[]> {
   return verifier(

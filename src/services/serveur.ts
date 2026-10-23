@@ -11,7 +11,7 @@ import { randomUUID } from 'node:crypto';
 import type { Config, Intervention, StatutIntervention } from '../logique/types';
 import { LIBELLES_CATEGORIES, type Categorie } from '../logique/types';
 import { decalageParis, rdvDuJour, type Rdv } from '../lib/agenda';
-import { chercherJournal, creerInterventionManuelle, dernieresRealisees, interventionsEntre, interventionsOuvertes, majIntervention, type NouvelleDemande } from './stockage';
+import { chercherJournal, creerInterventionManuelle, dernieresRealisees, historiqueInterventions, interventionsEntre, interventionsOuvertes, majIntervention, type NouvelleDemande } from './stockage';
 
 export type Etat = { demarreLe: Date; dernierPassage: Date | null; erreurs: string[]; mode: string };
 
@@ -79,7 +79,8 @@ a{color:#93c5fd}h1{margin:0;font-size:1.6rem}h2{font-size:1.1rem;margin:0 0 .6re
 table{width:100%;border-collapse:collapse;font-size:.9rem}th,td{text-align:left;padding:.45rem;border-bottom:1px solid var(--ligne);vertical-align:top}
 th{color:var(--doux);font-weight:600}input,select,button{font:inherit;padding:.3rem .5rem;border-radius:6px;border:1px solid var(--ligne);background:#0b1222;color:var(--texte)}
 button{background:#2563eb;border-color:#2563eb;cursor:pointer}.vide{color:var(--doux);font-style:italic}
-.erreur{color:var(--urgent)}.nav a{margin-left:1rem}
+.erreur{color:var(--urgent)}.nav a{margin-left:1rem;text-decoration:none;padding:.3rem .7rem;border-radius:8px}.nav a.ici{background:#2563eb;color:#fff}
+.filtres a{margin-right:.8rem}
 `;
 
 function page(titre: string, corps: string, rafraichir = 0): string {
@@ -127,6 +128,12 @@ html{font-size:clamp(13px,1.12vw,30px)}
 body{height:100vh;overflow:hidden;background:var(--fond);color:var(--texte);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;display:flex;flex-direction:column}
 header{display:flex;justify-content:space-between;align-items:baseline;padding:.5rem 1.2rem;border-bottom:1px solid var(--ligne)}
 header h1{font-size:1.6rem;font-weight:700}header h1 span{color:#a1d8ee}
+header nav.pages{display:flex;gap:.3rem;margin-left:auto;margin-right:1.2rem;align-self:center}
+header nav.pages a{color:var(--doux);text-decoration:none;font-size:.85rem;padding:.2rem .6rem;border-radius:999px;border:1px solid var(--ligne)}
+header nav.pages a.ici{color:var(--texte);border-color:#3fa7d6}
+a.compteur{color:inherit;text-decoration:none;cursor:pointer}a.compteur:hover,a.compteur.choisi{box-shadow:inset 0 0 0 2px #3fa7d6}
+a.action{color:inherit;text-decoration:none}a.action:hover span{text-decoration:underline}
+section h2 a.retour{font-size:.9rem;color:#a1d8ee;text-decoration:none;border:1px solid #3fa7d6;border-radius:999px;padding:.1rem .7rem}
 #h{font-size:1.8rem;font-variant-numeric:tabular-nums;color:#a1d8ee}
 main{flex:1;min-height:0;display:grid;grid-template-columns:repeat(var(--cols),1fr) 1.15fr;gap:.7rem;padding:.7rem 1.2rem}
 section{min-height:0;display:flex;flex-direction:column;background:var(--carte);border-radius:12px;padding:.9rem 1rem}
@@ -243,8 +250,8 @@ function zoomDe(url: URL): number {
   return Number.isFinite(z) && z >= 0.5 && z <= 3 ? z : 1;
 }
 
-function pageAffichage(titre: string, sousTitre: string, contenu: string, zoom: number, base: string): string {
-  const corps = `<header><h1>Groupe <span>CYRNEO</span> · ${e(sousTitre)}</h1><div id="h"></div></header>${contenu}<script>${SCRIPT_ECRAN}</script>`;
+function pageAffichage(titre: string, sousTitre: string, contenu: string, zoom: number, base: string, chemin = ''): string {
+  const corps = `<header><h1>Groupe <span>CYRNEO</span> · ${e(sousTitre)}</h1><nav class="pages">${liensPages(chemin)}</nav><div id="h"></div></header>${contenu}<script>${SCRIPT_ECRAN}</script>`;
   return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="60"><title>${e(titre)}</title><style>${STYLE_ECRAN}html{font-size:calc(${base} * ${zoom})}</style></head><body>${corps}</body></html>`;
 }
 
@@ -278,7 +285,7 @@ async function pageEcran(config: Config, url: URL): Promise<string> {
 <section><h2>Bons à traiter <small>${bons.length}${enRetard ? ` · <span id="retards">${enRetard} depuis + 24 h</span>` : ''}</small></h2><div class="liste">${
     erreur ? `<div class="alerte">${e(erreur)}</div>` : bons.map((i) => ligneBon(config, i)).join('') || '<div class="vide">Tout est planifié 👍</div>'
   }</div></section></main>`;
-  return pageAffichage('Planning CYRNEO', 'Planning', contenu, zoomDe(url), 'clamp(13px,1.12vw,30px)');
+  return pageAffichage('Planning CYRNEO', 'Planning', contenu, zoomDe(url), 'clamp(13px,1.12vw,30px)', '/ecran');
 }
 
 /** Écran des équipes : plannings des agents, et à droite les inters en attente de réalisation. */
@@ -291,7 +298,7 @@ async function pageEquipes(config: Config, url: URL): Promise<string> {
 <section><h2>En attente de réalisation <small>${aRealiser.length}</small></h2><div class="liste">${
     ouvertes.erreur ? `<div class="alerte">${e(ouvertes.erreur)}</div>` : aRealiser.map((i) => ligneBon(config, i)).join('') || '<div class="vide">Rien en attente 👍</div>'
   }</div></section></main>`;
-  return pageAffichage('Planning équipes', 'Planning des équipes', contenu, zoomDe(url), 'clamp(15px,1.3vw,36px)');
+  return pageAffichage('Planning équipes', 'Planning des équipes', contenu, zoomDe(url), 'clamp(15px,1.3vw,36px)', '/equipes');
 }
 
 async function chargerOuvertes(): Promise<{ bons: Intervention[]; erreur: string }> {
@@ -321,8 +328,30 @@ function ligneAppel(config: Config, i: Intervention): string {
 </div>`;
 }
 
-/** Écran du bureau : compteurs ; au centre le cahier d'appels (demandes entrantes des trois
- *  derniers jours, toutes origines) ; à droite les actions à mener et les derniers BI finalisés. */
+type Vue = { cle: string; titre: string; filtre: (i: Intervention, maintenant: number) => boolean };
+
+/** Ce que montre chaque compteur (et chaque ligne « À faire ») quand on clique dessus. */
+const VUES: Vue[] = [
+  { cle: 'a_prevoir', titre: 'À prévoir', filtre: () => true },
+  { cle: 'urgentes', titre: 'Urgentes', filtre: (i) => i.urgence === 'urgente' },
+  { cle: 'retard', titre: 'Sans suite depuis + 24 h', filtre: (i, m) => m - new Date(i.cree_le).getTime() > 24 * 3_600_000 },
+  { cle: 'reclamations', titre: 'Réclamations', filtre: (i) => i.type === 'reclamation' },
+  { cle: 'coordonnees', titre: 'Coordonnées manquantes', filtre: (i) => i.statut === 'coordonnees_demandees' },
+  { cle: 'sans_bi', titre: 'BI à créer dans Dolibarr', filtre: (i) => i.type === 'intervention' && i.statut === 'a_planifier' && !i.dolibarr_ref },
+];
+
+/** Lien vers le bureau, avec ou sans filtre, en gardant le zoom de l'écran. */
+function lienBureau(url: URL, vue?: string): string {
+  const p = new URLSearchParams();
+  if (url.searchParams.get('zoom')) p.set('zoom', url.searchParams.get('zoom')!);
+  if (vue) p.set('vue', vue);
+  const q = p.toString();
+  return `/bureau${q ? `?${q}` : ''}`;
+}
+
+/** Écran du bureau : compteurs cliquables ; au centre le cahier d'appels (demandes entrantes
+ *  des trois derniers jours, toutes origines) ou le détail d'un compteur ; à droite les actions
+ *  à mener et les derniers BI finalisés. */
 async function pageBureau(config: Config, url: URL): Promise<string> {
   const maintenant = Date.now();
   const debut = new Date(maintenant - 3 * 86_400_000);
@@ -331,22 +360,24 @@ async function pageBureau(config: Config, url: URL): Promise<string> {
     interventionsEntre(debut, new Date(maintenant + 60_000)).catch(() => null),
     dernieresRealisees().catch(() => null),
   ]);
-  const urgentes = bons.filter((i) => i.urgence === 'urgente').length;
-  const reclamations = bons.filter((i) => i.type === 'reclamation').length;
-  const attente = bons.filter((i) => i.statut === 'coordonnees_demandees').length;
-  const retard = bons.filter((i) => maintenant - new Date(i.cree_le).getTime() > 24 * 3_600_000).length;
-  const sansBi = bons.filter((i) => i.type === 'intervention' && i.statut === 'a_planifier' && !i.dolibarr_ref).length;
-  const compteur = (n: number, libelle: string, classe = '') => `<div class="compteur ${n && classe ? classe : ''}"><b>${n}</b><span>${libelle}</span></div>`;
+  const nombre = (cle: string) => bons.filter((i) => VUES.find((v) => v.cle === cle)!.filtre(i, maintenant)).length;
+  const vue = VUES.find((v) => v.cle === url.searchParams.get('vue')) ?? null;
 
-  const appels = (entrees ?? []).filter((i) => i.statut !== 'annulee').reverse();
-  const action = (n: number, libelle: string, classe: string) => (n ? `<div class="action ${classe}"><b>${n}</b><span>${libelle}</span></div>` : '');
+  const compteur = (cle: string, libelle: string, classe = '') => {
+    const n = nombre(cle);
+    return `<a class="compteur ${n && classe ? classe : ''} ${vue?.cle === cle ? 'choisi' : ''}" href="${lienBureau(url, vue?.cle === cle ? undefined : cle)}"><b>${n}</b><span>${libelle}</span></a>`;
+  };
+  const action = (cle: string, libelle: string, classe: string) => {
+    const n = nombre(cle);
+    return n ? `<a class="action ${classe}" href="${lienBureau(url, cle)}"><b>${n}</b><span>${libelle}</span></a>` : '';
+  };
   const actions =
     [
-      action(urgentes, 'urgence(s) à caler', 'rouge'),
-      action(reclamations, 'réclamation(s) à traiter', 'rouge'),
-      action(retard, 'demande(s) sans suite depuis + 24 h', 'rouge'),
-      action(attente, 'client(s) à rappeler : coordonnées manquantes', 'orange'),
-      action(sansBi, 'BI à créer dans Dolibarr', 'orange'),
+      action('urgentes', 'urgence(s) à caler', 'rouge'),
+      action('reclamations', 'réclamation(s) à traiter', 'rouge'),
+      action('retard', 'demande(s) sans suite depuis + 24 h', 'rouge'),
+      action('coordonnees', 'client(s) à rappeler : coordonnées manquantes', 'orange'),
+      action('sans_bi', 'BI à créer dans Dolibarr', 'orange'),
     ].join('') || '<div class="vide">Rien à faire 👍</div>';
   const faits =
     (realisees ?? [])
@@ -356,24 +387,45 @@ async function pageBureau(config: Config, url: URL): Promise<string> {
       )
       .join('') || '<div class="vide">Aucun BI finalisé récemment</div>';
 
-  const contenu = `<div class="compteurs">${compteur(bons.length, 'à prévoir')}${compteur(urgentes, 'urgentes', 'rouge')}${compteur(retard, 'depuis + 24 h', 'rouge')}${compteur(reclamations, 'réclamations', 'rouge')}${compteur(attente, 'coordonnées manquantes', 'orange')}</div>
-<main class="cahier">
-<section><h2>Cahier d'appels <small>${appels.length} sur 3 jours · ✉️ mail · 💬 Rainbow · 🧾 Dolibarr · ✍️ bureau</small></h2>
-<div class="appel entete"><span>Heure</span><span></span><span>Client</span><span>Demande</span><span>Lieu</span><span>Statut</span></div>
-<div class="liste appels">${erreur || !entrees ? `<div class="alerte">${e(erreur || 'Cahier indisponible pour le moment')}</div>` : appels.map((i) => ligneAppel(config, i)).join('') || '<div class="vide">Aucune demande sur 3 jours</div>'}</div></section>
+  const entete = '<div class="appel entete"><span>Heure</span><span></span><span>Client</span><span>Demande</span><span>Lieu</span><span>Statut</span></div>';
+  let centre: string;
+  if (vue) {
+    const lignes = bons.filter((i) => vue.filtre(i, maintenant));
+    centre = `<section><h2>${e(vue.titre)} · ${lignes.length} <a class="retour" href="${lienBureau(url)}">← Retour au cahier</a></h2>${entete}
+<div class="liste appels">${erreur ? `<div class="alerte">${e(erreur)}</div>` : lignes.map((i) => ligneAppel(config, i)).join('') || '<div class="vide">Rien ici 👍</div>'}</div></section>`;
+  } else {
+    const appels = (entrees ?? []).filter((i) => i.statut !== 'annulee').reverse();
+    centre = `<section><h2>Cahier d'appels <small>${appels.length} sur 3 jours · ✉️ mail · 💬 Rainbow · 🧾 Dolibarr · ✍️ bureau</small></h2>${entete}
+<div class="liste appels">${!entrees ? '<div class="alerte">Cahier indisponible pour le moment</div>' : appels.map((i) => ligneAppel(config, i)).join('') || '<div class="vide">Aucune demande sur 3 jours</div>'}</div></section>`;
+  }
+
+  const contenu = `<div class="compteurs">${compteur('a_prevoir', 'à prévoir')}${compteur('urgentes', 'urgentes', 'rouge')}${compteur('retard', 'depuis + 24 h', 'rouge')}${compteur('reclamations', 'réclamations', 'rouge')}${compteur('coordonnees', 'coordonnées manquantes', 'orange')}</div>
+<main class="cahier">${centre}
 <div class="cote">
 <section><h2>À faire</h2>${actions}</section>
 <section class="extensible"><h2>BI finalisés <small>par les agents</small></h2><div class="liste">${faits}</div></section>
 </div></main>`;
-  return pageAffichage('Bureau CYRNEO', 'Bureau', contenu, zoomDe(url), 'clamp(14px,1.15vw,34px)');
+  return pageAffichage('Bureau CYRNEO', vue ? `Bureau · ${vue.titre}` : 'Bureau', contenu, zoomDe(url), 'clamp(14px,1.15vw,34px)', '/bureau');
 }
 
-function nav(): string {
-  return '<div class="barre"><h1>Secrétariat CYRNEO</h1><div class="nav"><a href="/equipes">Écran équipes</a><a href="/bureau">Écran bureau</a><a href="/interventions">Interventions</a><a href="/journal">Journal</a></div></div>';
+const PAGES = [
+  { chemin: '/equipes', libelle: 'Tableau agents' },
+  { chemin: '/bureau', libelle: 'Admin' },
+  { chemin: '/interventions', libelle: 'Historique' },
+  { chemin: '/journal', libelle: 'Journal' },
+];
+
+/** Liens entre les pages, présents partout (la page en cours est mise en avant). */
+function liensPages(actuelle: string): string {
+  return PAGES.map((p) => `<a href="${p.chemin}"${p.chemin === actuelle ? ' class="ici"' : ''}>${p.libelle}</a>`).join('');
 }
 
-async function pageInterventions(config: Config): Promise<string> {
-  const inters = await interventionsOuvertes();
+function nav(actuelle: string): string {
+  return `<div class="barre"><h1>Secrétariat CYRNEO</h1><div class="nav">${liensPages(actuelle)}</div></div>`;
+}
+
+async function pageInterventions(config: Config, tout = false): Promise<string> {
+  const inters = tout ? await historiqueInterventions() : await interventionsOuvertes();
   const options = (actuel: string) =>
     (Object.keys(STATUTS) as StatutIntervention[]).map((s) => `<option value="${s}" ${s === actuel ? 'selected' : ''}>${STATUTS[s]}</option>`).join('');
   const lignes = inters
@@ -397,7 +449,7 @@ async function pageInterventions(config: Config): Promise<string> {
 <input name="nature" placeholder="Demande (ex. vidange fosse 3 m³) *" required style="grid-column:1/-1"><button>Créer la demande</button></form></details>`;
   return page(
     'Interventions',
-    `${nav()}${formulaire}<div style="padding:1.2rem 1.5rem" class="carte"><table><tr><th>Réf.</th><th>Société</th><th>Client</th><th>Lieu</th><th>Demande</th><th>Suivi</th></tr>${lignes || '<tr><td colspan="6" class="vide">Rien en cours</td></tr>'}</table></div>`
+    `${nav('/interventions')}${formulaire}<div class="filtres" style="padding:1rem 1.5rem 0">${tout ? '<a href="/interventions">En cours</a><b>Tout l’historique</b> (300 dernières)' : '<b>En cours</b> · <a href="/interventions?tout=1">Tout l’historique</a>'}</div><div style="padding:1.2rem 1.5rem" class="carte"><table><tr><th>Réf.</th><th>Société</th><th>Client</th><th>Lieu</th><th>Demande</th><th>Suivi</th></tr>${lignes || '<tr><td colspan="6" class="vide">Rien en cours</td></tr>'}</table></div>`
   );
 }
 
@@ -412,7 +464,7 @@ async function pageJournal(config: Config, q: string): Promise<string> {
     .join('');
   return page(
     'Journal',
-    `${nav()}<div style="padding:1.2rem 1.5rem"><form><input name="q" value="${e(q)}" placeholder="Nom, sujet, boîte…" size="40"> <button>Chercher</button></form>
+    `${nav('/journal')}<div style="padding:1.2rem 1.5rem"><form><input name="q" value="${e(q)}" placeholder="Nom, sujet, boîte…" size="40"> <button>Chercher</button></form>
 <div class="carte" style="margin-top:1rem"><table><tr><th>Reçu</th><th>Boîte</th><th>Expéditeur</th><th>Sujet</th><th>Tri</th><th>Statut</th><th>Ce qui a été fait</th></tr>${lignes || '<tr><td colspan="7" class="vide">Aucun mail</td></tr>'}</table></div></div>`
   );
 }
@@ -466,7 +518,7 @@ export async function gererRequete(req: http.IncomingMessage, res: http.ServerRe
     }
     if (!autorise) return envoyer(401, pageCle(url));
 
-    if (url.pathname === '/interventions' && req.method === 'GET') return envoyer(200, await pageInterventions(config), entetesCle);
+    if (url.pathname === '/interventions' && req.method === 'GET') return envoyer(200, await pageInterventions(config, url.searchParams.get('tout') === '1'), entetesCle);
     if (url.pathname === '/interventions/nouvelle' && req.method === 'POST') {
       const f = await lireCorps(req);
       const champ = (n: string) => (f.get(n) ?? '').trim().slice(0, 300);

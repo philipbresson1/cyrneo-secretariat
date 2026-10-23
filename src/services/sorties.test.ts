@@ -62,6 +62,12 @@ describe('écran et pages locales', () => {
     expect(bureau).toContain('À faire');
     expect(bureau).toContain('BI finalisés');
     expect(bureau).toContain('1</b><span>urgence(s) à caler');
+    expect(bureau).toContain('href="/bureau?vue=urgentes"');
+    for (const lien of ['/equipes', '/bureau', '/interventions', '/journal']) expect(bureau).toContain(`href="${lien}"`);
+    const urgentes = await (await fetch(`${base}/bureau?vue=urgentes&zoom=1.2`)).text();
+    expect(urgentes).toContain('Retour au cahier');
+    expect(urgentes).toContain('href="/bureau?zoom=1.2"');
+    expect(urgentes).toContain('Jean &lt;Martin&gt;');
     expect(bureau).toContain('Jean &lt;Martin&gt;');
     expect(bureau).toContain('à prévoir');
     const nouvelle = await fetch(`${base}/interventions/nouvelle?cle=cle-test`, {
