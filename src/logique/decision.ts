@@ -1,8 +1,9 @@
 /**
  * Ce que le secrétariat fait d'un mail trié. Pur : aucune action n'est exécutée ici.
  */
-import type { Action, Classification, Config, Intervention, MailRecu } from './types';
+import type { Action, Classification, Config, Intervention, MailRecu, Societe, TypeDemande } from './types';
 import { coordonneesManquantes } from './modeles';
+import { horsHeuresOuvrees } from './horaires';
 
 export type Contexte = {
   config: Config;
@@ -100,13 +101,36 @@ export function decider(mail: MailRecu, c: Classification, ctx: Contexte): Actio
       actions.push({ type: 'rainbow', societe, gabarit: 'relance', suite: 'Client à rappeler.' });
       break;
     case 'facture_recue':
-      if (mail.piecesJointes.length > 0) actions.push({ type: 'classer_pieces_jointes' });
+      if (mail.piecesJointes.length > 0) actions.push({ type: 'classer_pieces_jointes', dossier: 'factures' });
+      break;
+    case 'entretien_vehicule':
+      if (mail.piecesJointes.length > 0) actions.push({ type: 'classer_pieces_jointes', dossier: 'vehicules' });
+      if (ctx.config.bulles.vehicules) actions.push({ type: 'rainbow', societe, gabarit: 'vehicule', suite: '' });
       break;
     default:
       break;
   }
 
   return [...actions, ...transferts(c, societe, ctx.config)];
+}
+
+/** Bulle Rainbow d'un message, par ordre de priorité :
+ *  - mode test : la bulle de test, toujours ;
+ *  - entretien véhicules : la bulle commune du groupe ;
+ *  - demande d'intervention hors heures ouvrées (soir, nuit, week-end, férié) : astreinte ;
+ *  - demande d'inspection caméra (intervention ou devis) : bulle ITV ;
+ *  - sinon la bulle de la société. */
+export function choisirBulle(
+  config: Config,
+  s: Societe,
+  m: { gabarit: 'nouvelle' | 'complement' | 'relance' | 'reclamation' | 'vehicule'; type: TypeDemande; inspectionCamera: boolean; recuLe: Date }
+): string {
+  if (config.mode === 'test') return config.test.bulleRainbow;
+  if (m.gabarit === 'vehicule') return config.bulles.vehicules;
+  const demande = m.gabarit === 'nouvelle' || m.gabarit === 'complement';
+  if (s.bulleUrgence && demande && m.type === 'intervention' && horsHeuresOuvrees(m.recuLe, config.heuresOuvrees)) return s.bulleUrgence;
+  if (s.bulleInspection && demande && m.inspectionCamera) return s.bulleInspection;
+  return s.bulleRainbow;
 }
 
 function avecDolibarr(societe: string, config: Config): boolean {

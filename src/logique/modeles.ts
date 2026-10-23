@@ -152,6 +152,19 @@ export function messageRainbowRelance(mail: MailRecu, c: Classification, s: Soci
     .join('\n');
 }
 
+export function messageRainbowVehicule(mail: MailRecu, c: Classification, fichiers: string[]): string {
+  const pj = mail.piecesJointes.map((p) => p.nom);
+  return [
+    `🚚 Entretien véhicules`,
+    c.resume ? `📝 ${c.resume}` : '',
+    `✉️ ${mail.deNom || mail.deAdresse} — « ${mail.sujet} »`,
+    pj.length ? `📎 ${pj.join(', ')}` : '',
+    fichiers.length ? `🗂️ Classé dans le dossier véhicules (${fichiers.length} fichier${fichiers.length > 1 ? 's' : ''})` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
 export function referenceIntervention(id: number, type: TypeDemande, annee: number): string {
   return `${{ devis: 'DEV', reclamation: 'REC', intervention: 'INT' }[type]}-${annee}-${String(id).padStart(4, '0')}`;
 }

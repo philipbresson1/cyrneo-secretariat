@@ -23,12 +23,13 @@ export function consignesSysteme(societes: Societe[]): string {
     liste,
     '',
     'Pour le mail reçu, renseigne le schéma de sortie :',
-    "- categorie : demande_intervention (un client veut qu'on vienne faire quelque chose), demande_devis (il veut un prix avant de décider), complement_coordonnees (il répond à notre demande de coordonnées), relance_client (il relance une demande déjà faite), reclamation (litige ou contestation qui demande une réponse : facture contestée ou en double, client mécontent, travaux mal faits, refus ou exigence d'un partenaire qui bloque un chantier, mise en demeure, rejet d'une offre de marché), facture_recue (un fournisseur ou prestataire nous envoie une facture), administratif, publicite, autre.",
+    "- categorie : demande_intervention (un client veut qu'on vienne faire quelque chose), demande_devis (il veut un prix avant de décider), complement_coordonnees (il répond à notre demande de coordonnées), relance_client (il relance une demande déjà faite), reclamation (litige ou contestation qui demande une réponse : facture contestée ou en double, client mécontent, travaux mal faits, refus ou exigence d'un partenaire qui bloque un chantier, mise en demeure, rejet d'une offre de marché), facture_recue (un fournisseur ou prestataire nous envoie une facture), entretien_vehicule (tout ce qui concerne l'entretien des camions et véhicules du groupe : garage, pièces détachées, pneus, contrôle technique, carte grise, devis ou factures de garage ; prioritaire sur facture_recue), administratif, publicite, autre.",
     "- societe : l'identifiant de la société concernée d'après le métier demandé. 'inconnue' si rien ne permet de trancher.",
     "- urgence : pour une réclamation, 'urgente' si un chantier est bloqué, un délai court en jeu ou une mise en demeure ; sinon 'normale'. Pour le reste, 'urgente' seulement pour un débordement, un refoulement, une canalisation bouchée, une fuite, des nuisibles dans un commerce alimentaire, ou si le client le dit clairement. Sinon 'normale'.",
     "- resume : une phrase courte et concrète, comme un collègue la noterait sur un post-it.",
     "- nature : ce qu'il faut faire, en quelques mots (ex. « vidange fosse 3 m³ », « débouchage évier »).",
     "- dateSouhaitee : la date ou la période voulue par le client, telle qu'il l'écrit. Vide sinon.",
+    "- inspectionCamera : true si la demande (intervention ou devis) porte sur une inspection caméra ou ITV de canalisations, sinon false.",
     "- contact : les coordonnées DU CLIENT (jamais celles d'une société du groupe). nom, telephone, email, adresse (lieu de l'intervention), commune. Laisse vide ce qui n'est pas écrit dans le mail : n'invente rien.",
     "Si le mail est transféré par un syndic ou une agence, le contact est la personne à joindre sur place quand elle est indiquée, sinon le syndic.",
     "Les PDF joints sont fournis avant le mail : lis-les. Un bon de travaux, bon de commande ou ordre de service d'un bailleur (Erilia, OPH…), d'un syndic ou d'une entreprise est une demande_intervention : la nature, l'adresse, le locataire ou le contact sur place y figurent. Un bon qui porte sur une intervention déjà réalisée (pour facturer) est administratif.",
@@ -64,6 +65,7 @@ export function schemaSortie(societes: Societe[]) {
       resume: CHAINE,
       nature: CHAINE,
       dateSouhaitee: CHAINE,
+      inspectionCamera: { type: 'boolean' },
       contact: {
         type: 'object',
         properties: { nom: CHAINE, telephone: CHAINE, email: CHAINE, adresse: CHAINE, commune: CHAINE },
@@ -71,7 +73,7 @@ export function schemaSortie(societes: Societe[]) {
         additionalProperties: false,
       },
     },
-    required: ['categorie', 'societe', 'urgence', 'resume', 'nature', 'dateSouhaitee', 'contact'],
+    required: ['categorie', 'societe', 'urgence', 'resume', 'nature', 'dateSouhaitee', 'inspectionCamera', 'contact'],
     additionalProperties: false,
   };
 }
@@ -105,6 +107,7 @@ export function lireClassification(json: string, mail: MailRecu, societes: Socie
     resume: texte(brut.resume),
     nature: texte(brut.nature),
     dateSouhaitee: texte(brut.dateSouhaitee),
+    inspectionCamera: brut.inspectionCamera === true,
     contact: {
       nom: texte(c.nom) || mail.deNom,
       // Le numéro doit exister dans le mail : on ne promet pas de rappeler un numéro inventé.

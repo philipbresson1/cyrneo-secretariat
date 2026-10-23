@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { choisirTelephone, formaterTelephone, normaliserTelephone, trouverTelephones } from './telephone';
 import { raisonDeNePasRepondre } from './garde-fous';
 import { lireClassification, pdfALire } from './classification';
-import { decider, type Contexte } from './decision';
+import { choisirBulle, decider, type Contexte } from './decision';
 import { accuseIntervention, coordonneesManquantes, demandeCoordonnees, estProfessionnel, messageRainbow, referenceIntervention } from './modeles';
 import { validerConfig } from './config';
 import { horsHeuresOuvrees, joursFeries, paques } from './horaires';
@@ -38,6 +38,7 @@ function classification(partiel: Partial<Classification> = {}): Classification {
     resume: 'Fosse qui déborde à Porticcio',
     nature: 'vidange fosse',
     dateSouhaitee: '',
+    inspectionCamera: false,
     contact: { nom: 'Jean Martin', telephone: '06 12 34 56 78', email: 'jean.martin@orange.fr', adresse: '12 route de la mer', commune: 'Porticcio' },
     ...partiel,
   };
@@ -160,7 +161,7 @@ describe('décision', () => {
     const cfg = { ...config, transferts: [{ categories: ['facture_recue' as const], societes: '*' as const, vers: ['Compta@exemple.fr'] }] };
     const m = mail({ piecesJointes: [{ nom: 'f.pdf', type: 'application/pdf', taille: 10, contenu: Buffer.from('') }] });
     const actions = decider(m, classification({ categorie: 'facture_recue' }), ctx({ config: cfg }));
-    expect(actions).toEqual([{ type: 'classer_pieces_jointes' }, { type: 'transferer', vers: ['compta@exemple.fr'] }]);
+    expect(actions).toEqual([{ type: 'classer_pieces_jointes', dossier: 'factures' }, { type: 'transferer', vers: ['compta@exemple.fr'] }]);
   });
 
   it('Dolibarr actif : bon créé seulement quand on peut joindre le client', () => {
@@ -193,6 +194,16 @@ describe('décision', () => {
   it('les bulles Rainbow de la config correspondent aux vraies bulles', () => {
     const sa = config.societes.find((x) => x.id === 'sud-assainissement')!;
     expect([sa.bulleRainbow, sa.bulleUrgence]).toEqual(['Intervention SUD ASSAINISSEMENT', 'Urgence assainissement']);
+  });
+
+  it('entretien véhicule : pièces jointes au dossier véhicules et bulle entretien', () => {
+    const m = mail({ piecesJointes: [{ nom: 'facture-garage.pdf', type: 'application/pdf', taille: 10, contenu: Buffer.from('') }] });
+    expect(decider(m, classification({ categorie: 'entretien_vehicule' }), ctx())).toEqual([
+      { type: 'classer_pieces_jointes', dossier: 'vehicules' },
+      { type: 'rainbow', societe: 'sud-assainissement', gabarit: 'vehicule', suite: '' },
+    ]);
+    expect(config.bulles.vehicules).toBe('Entretien vehicules cyrneo');
+    expect(config.societes.find((x) => x.id === 'sud-assainissement')!.bulleInspection).toBe('ITV Sud assai');
   });
 
   it('publicité : rien à faire', () => {
@@ -256,6 +267,23 @@ describe('heures d’astreinte', () => {
     expect(horsHeuresOuvrees(new Date('2026-11-11T10:00:00Z'), h)).toBe(true); // 11 novembre (mercredi)
     expect(horsHeuresOuvrees(new Date('2026-12-15T07:30:00Z'), h)).toBe(false); // mardi 8h30, heure d'hiver
   });
+});
+
+describe('choix de la bulle Rainbow', () => {
+  const sa = config.societes.find((x) => x.id === 'sud-assainissement')!;
+  const ms = config.societes.find((x) => x.id === 'multiservices-2a')!;
+  const jeudi10h = new Date('2026-10-22T08:00:00Z');
+  const jeudi20h = new Date('2026-10-22T18:00:00Z');
+  const m = (p: Partial<Parameters<typeof choisirBulle>[2]>) => ({ gabarit: 'nouvelle' as const, type: 'intervention' as const, inspectionCamera: false, recuLe: jeudi10h, ...p });
+  it('journée : bulle de la société', () => expect(choisirBulle(config, sa, m({}))).toBe('Intervention SUD ASSAINISSEMENT'));
+  it('soir : astreinte', () => expect(choisirBulle(config, sa, m({ recuLe: jeudi20h }))).toBe('Urgence assainissement'));
+  it('devis du soir : pas d’astreinte', () => expect(choisirBulle(config, sa, m({ recuLe: jeudi20h, type: 'devis' }))).toBe('Intervention SUD ASSAINISSEMENT'));
+  it('relance du soir : pas d’astreinte', () => expect(choisirBulle(config, sa, m({ recuLe: jeudi20h, gabarit: 'relance' }))).toBe('Intervention SUD ASSAINISSEMENT'));
+  it('inspection caméra en journée : ITV', () => expect(choisirBulle(config, sa, m({ inspectionCamera: true, type: 'devis' }))).toBe('ITV Sud assai'));
+  it('inspection caméra le soir : astreinte d’abord', () => expect(choisirBulle(config, sa, m({ inspectionCamera: true, recuLe: jeudi20h }))).toBe('Urgence assainissement'));
+  it('société sans astreinte : sa bulle même le soir', () => expect(choisirBulle(config, ms, m({ recuLe: jeudi20h }))).toBe('Ms2A2B'));
+  it('véhicules : bulle entretien', () => expect(choisirBulle(config, ms, m({ gabarit: 'vehicule' }))).toBe('Entretien vehicules cyrneo'));
+  it('mode test : toujours la bulle de test', () => expect(choisirBulle({ ...config, mode: 'test' }, sa, m({ recuLe: jeudi20h }))).toBe('Test secrétariat'));
 });
 
 describe('config', () => {

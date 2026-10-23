@@ -3,7 +3,7 @@
  */
 import type { ActionExecutee, Boite, Classification, Config, Intervention, MailRecu, Societe } from './logique/types';
 import { raisonDeNePasRepondre } from './logique/garde-fous';
-import { horsHeuresOuvrees } from './logique/horaires';
+import { choisirBulle } from './logique/decision';
 import { decider, fusionnerContact, societeRetenue } from './logique/decision';
 import {
   accuseDevis,
@@ -12,6 +12,7 @@ import {
   messageRainbow,
   messageRainbowComplement,
   messageRainbowRelance,
+  messageRainbowVehicule,
   type MailSortant,
 } from './logique/modeles';
 import { classer } from './services/classifieur';
@@ -107,14 +108,17 @@ export async function traiterMail(mail: MailRecu, boite: Boite, config: Config):
         const texte =
           a.gabarit === 'complement' && intervention
             ? `${messageRainbowComplement(mail, classification, s, intervention)}${a.suite !== 'À rappeler pour planifier.' ? `\n⚠️ ${a.suite}` : ''}`
+            : a.gabarit === 'vehicule'
+              ? messageRainbowVehicule(mail, classification, fichiers)
             : a.gabarit === 'relance' || a.gabarit === 'reclamation'
               ? messageRainbowRelance(mail, classification, s, a.gabarit === 'reclamation' ? `${classification.urgence === 'urgente' ? '🚨' : '⚠️'} Réclamation ${intervention?.reference ?? ''}`.trim() : undefined)
               : messageRainbow(mail, classification, s, ref, a.suite);
-        // Astreinte : une demande d'intervention reçue le soir, la nuit, le week-end ou un jour
-        // férié part dans la bulle d'urgence ; tout le reste dans la bulle habituelle.
-        const demandeIntervention = (a.gabarit === 'nouvelle' || a.gabarit === 'complement') && (intervention?.type ?? 'intervention') === 'intervention';
-        const astreinte = !!s.bulleUrgence && demandeIntervention && horsHeuresOuvrees(mail.recuLe, config.heuresOuvrees);
-        const bulle = config.mode === 'test' ? config.test.bulleRainbow : astreinte ? s.bulleUrgence! : s.bulleRainbow;
+        const bulle = choisirBulle(config, s, {
+          gabarit: a.gabarit,
+          type: intervention?.type ?? 'intervention',
+          inspectionCamera: classification.inspectionCamera,
+          recuLe: mail.recuLe,
+        });
         await executer('rainbow', simulation, `bulle « ${bulle} »`, async () => {
           try {
             await publier(bulle, texte);
@@ -160,7 +164,7 @@ export async function traiterMail(mail: MailRecu, boite: Boite, config: Config):
       case 'classer_pieces_jointes': {
         // Écrire sur le disque du PC n'a rien de risqué : fait même en simulation.
         try {
-          fichiers = await classerPiecesJointes(mail, idSociete, config.dossiers.factures);
+          fichiers = await classerPiecesJointes(mail, idSociete, a.dossier === 'vehicules' ? config.dossiers.vehicules : config.dossiers.factures);
           faites.push({ action: a.type, detail: `${fichiers.length} fichier(s) classé(s)`, ok: true, simulee: false });
         } catch (e) {
           faites.push({ action: a.type, detail: `ÉCHEC : ${e instanceof Error ? e.message : String(e)}`, ok: false, simulee: false });

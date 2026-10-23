@@ -11,7 +11,8 @@ const DEFAUTS = {
   domainesInternes: [],
   transferts: [],
   agendas: [],
-  dossiers: { factures: 'donnees/factures', rapports: 'donnees/rapports' },
+  dossiers: { factures: 'donnees/factures', rapports: 'donnees/rapports', vehicules: 'donnees/vehicules' },
+  bulles: { vehicules: '' },
   rapport: { heure: '19:00', destinataires: [] },
   test: { bulleRainbow: '', adresse: '' },
   serveur: { port: 3939, ecranPublic: true },
@@ -45,6 +46,9 @@ export function validerConfig(brut: unknown): Config {
   for (const r of c.transferts ?? []) {
     if (r.societes !== '*') for (const s of r.societes) if (!ids.has(s)) erreurs.push(`transfert : société inconnue « ${s} »`);
   }
+  // Champs ajoutés après coup : une config plus ancienne reste valable.
+  c.dossiers.vehicules ||= 'donnees/vehicules';
+  c.bulles ??= { vehicules: '' };
   if (c.mode === 'test' && (!c.test.bulleRainbow || !c.test.adresse)) {
     erreurs.push('mode test : renseigner test.bulleRainbow et test.adresse (tout y sera envoyé à la place des vrais destinataires)');
   }

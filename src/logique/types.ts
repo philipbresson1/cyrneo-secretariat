@@ -14,6 +14,7 @@ export type Categorie =
   | 'relance_client' // client qui relance une demande déjà faite
   | 'reclamation' // litige, facture contestée, client mécontent, refus d'un partenaire
   | 'facture_recue'
+  | 'entretien_vehicule' // garage, pièces, contrôle technique, pneus, carte grise des camions et véhicules
   | 'administratif' // banque, URSSAF, assurance, fournisseur sans facture…
   | 'publicite'
   | 'autre';
@@ -25,6 +26,7 @@ export const CATEGORIES: Categorie[] = [
   'relance_client',
   'reclamation',
   'facture_recue',
+  'entretien_vehicule',
   'administratif',
   'publicite',
   'autre',
@@ -37,6 +39,7 @@ export const LIBELLES_CATEGORIES: Record<Categorie, string> = {
   relance_client: 'Relance client',
   reclamation: 'Réclamation',
   facture_recue: 'Facture reçue',
+  entretien_vehicule: 'Entretien véhicules',
   administratif: 'Administratif',
   publicite: 'Publicité',
   autre: 'Autre',
@@ -50,6 +53,7 @@ export type Societe = {
   site: string;
   bulleRainbow: string; // nom exact de la bulle Rainbow
   bulleUrgence?: string; // bulle d'astreinte : demandes d'intervention hors heures ouvrées
+  bulleInspection?: string; // bulle des demandes d'inspection caméra (intervention ou devis)
   delaiRappel: string; // ex. « dans la journée »
   delaiDevis: string; // ex. « sous 48 h »
   alerteSecours: string[]; // adresses prévenues par mail si Rainbow est indisponible
@@ -82,7 +86,9 @@ export type Config = {
   societes: Societe[];
   transferts: RegleTransfert[];
   agendas: Agenda[];
-  dossiers: { factures: string; rapports: string };
+  dossiers: { factures: string; rapports: string; vehicules: string };
+  /** Bulles communes au groupe. */
+  bulles: { vehicules: string };
   rapport: { heure: string; destinataires: string[] };
   test: { bulleRainbow: string; adresse: string };
   serveur: { port: number; ecranPublic: boolean };
@@ -131,6 +137,7 @@ export type Classification = {
   resume: string;
   nature: string;
   dateSouhaitee: string;
+  inspectionCamera: boolean; // la demande porte sur une inspection caméra (ITV) de canalisations
   contact: Contact;
 };
 
@@ -168,9 +175,9 @@ export type Intervention = {
 export type Action =
   | { type: 'creer_intervention'; nature: TypeDemande; statut: StatutIntervention }
   | { type: 'completer_intervention'; interventionId: number; statut: StatutIntervention }
-  | { type: 'rainbow'; societe: string; gabarit: 'nouvelle' | 'complement' | 'relance' | 'reclamation'; suite: string }
+  | { type: 'rainbow'; societe: string; gabarit: 'nouvelle' | 'complement' | 'relance' | 'reclamation' | 'vehicule'; suite: string }
   | { type: 'repondre'; modele: 'accuse_intervention' | 'accuse_devis' | 'demande_coordonnees'; manquants: string[] }
-  | { type: 'classer_pieces_jointes' }
+  | { type: 'classer_pieces_jointes'; dossier: 'factures' | 'vehicules' }
   | { type: 'transferer'; vers: string[] }
   | { type: 'bon_dolibarr' };
 

@@ -54,6 +54,7 @@
       "site": "www.sud-assainissement-ajaccio.com",
       "bulleRainbow": "Intervention SUD ASSAINISSEMENT",
       "bulleUrgence": "Urgence assainissement",
+      "bulleInspection": "ITV Sud assai",
       "delaiRappel": "dans la journée",
       "delaiDevis": "sous 48 h",
       "alerteSecours": []
@@ -124,8 +125,11 @@
   ],
   "dossiers": {
     "factures": "C:/Cyrneo/Factures a saisir",
-    "rapports": "C:/Cyrneo/Rapports secretariat"
+    "rapports": "C:/Cyrneo/Rapports secretariat",
+    "vehicules": "C:/Cyrneo/Entretien vehicules"
   },
+
+  "bulles": { "vehicules": "Entretien vehicules cyrneo" },
   "rapport": {
     "heure": "19:00",
     "destinataires": []

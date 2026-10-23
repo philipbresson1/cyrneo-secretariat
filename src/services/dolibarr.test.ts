@@ -7,7 +7,7 @@ import { creerBonIntervention, descriptionBon, entiteDe, trouverOuCreerClient } 
 const config = validerConfig({ ...exemple, dolibarr: { actif: true, url: 'https://doli.exemple.fr/', entites: { 'sud-assainissement': 2 } } });
 const c: Classification = {
   categorie: 'demande_intervention', societe: 'sud-assainissement', urgence: 'urgente', resume: 'Fosse qui déborde', nature: 'vidange fosse',
-  dateSouhaitee: 'demain', contact: { nom: "Jean O'Brien", telephone: '06 12 34 56 78', email: 'jean@orange.fr', adresse: '12 route de la mer', commune: 'Porticcio' },
+  dateSouhaitee: 'demain', inspectionCamera: false, contact: { nom: "Jean O'Brien", telephone: '06 12 34 56 78', email: 'jean@orange.fr', adresse: '12 route de la mer', commune: 'Porticcio' },
 };
 
 type Appel = { url: string; init: RequestInit };
