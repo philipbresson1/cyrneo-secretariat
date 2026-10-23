@@ -8,7 +8,7 @@
  *   npm start -- bulles        liste les bulles Rainbow visibles par le compte
  *   npm start -- dolibarr      vérifie l'accès Dolibarr, société par société
  *   npm start -- tiers         recopie maintenant la liste des tiers Dolibarr
- *   npm start -- devis         relève maintenant les devis (propositions) Dolibarr
+ *   npm start -- devis         relie les devis à faire aux propositions Dolibarr, devis acceptés
  *   npm start -- reprise-rainbow "SUD Travaux" 90   devis à faire tirés des anciens posts d'une bulle
  *   npm start -- essai-bon REF bon Dolibarr + message bulle de test pour une fiche existante
  *   npm start -- verifier      teste chaque branchement : base, Claude, boîtes mail, agendas

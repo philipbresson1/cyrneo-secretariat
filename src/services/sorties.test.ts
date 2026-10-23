@@ -24,6 +24,7 @@ const journal = {
 vi.mock('./stockage', () => ({
   interventionsOuvertes: async () => [inter],
   interventionsEntre: async () => [inter],
+  lireSynchro: async (nom: string) => (nom === 'devis_signes:3' ? JSON.stringify([{ ref: 'PR2610-0050', societe: 'sud-travaux', tiersNom: 'SCI Le Lazaret', libelle: 'Réseau EU parking', signeLe: '2026-10-20T10:00:00Z' }]) : null),
   dernieresRealisees: async () => [{ ...inter, id: 2, statut: 'realisee', client_nom: 'Mme Leca', dolibarr_ref: 'FI2610-0007', maj_le: '2026-10-23T15:00:00Z' }],
   journalEntre: async () => [journal],
   chercherJournal: async () => [journal],
@@ -74,6 +75,9 @@ describe('écran et pages locales', () => {
     expect(travaux).toContain('Sud Travaux · Entretien et Couleurs');
     expect(travaux).toContain('devis à faire');
     expect(travaux).toContain('class="gantt"');
+    expect(travaux).toContain('Devis acceptés à planifier');
+    expect(travaux).toContain('SCI Le Lazaret');
+    expect(travaux).not.toMatch(/€/); // jamais de montant sur les écrans
     expect(travaux).not.toContain('Jean &lt;Martin&gt;'); // inter de Sud Assainissement : pas sur cet écran
     expect(bureau).toContain('href="/travaux"');
     const urgentes = await (await fetch(`${base}/bureau?vue=urgentes&zoom=1.2`)).text();

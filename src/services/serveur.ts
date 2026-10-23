@@ -11,9 +11,11 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { Config, Intervention, StatutIntervention } from '../logique/types';
+import type { DevisSigne } from './appels';
+import { nomPresent } from '../logique/tiers';
 import { LIBELLES_CATEGORIES, type Categorie } from '../logique/types';
 import { decalageParis, estWeekEnd, jourParis as jourParisCle, rdvDuJour, titreComparable, type Rdv } from '../lib/agenda';
-import { chercherJournal, creerInterventionManuelle, dernieresRealisees, historiqueInterventions, interventionsEntre, interventionsOuvertes, majIntervention, type NouvelleDemande } from './stockage';
+import { chercherJournal, creerInterventionManuelle, dernieresRealisees, historiqueInterventions, lireSynchro, interventionsEntre, interventionsOuvertes, majIntervention, type NouvelleDemande } from './stockage';
 
 export type Etat = { demarreLe: Date; dernierPassage: Date | null; erreurs: string[]; mode: string };
 
@@ -469,13 +471,31 @@ async function pageEquipes(config: Config, url: URL): Promise<string> {
 /** Écran des sociétés du bâtiment (bureau du conducteur de travaux, chef d'équipe) : Gantt des
  *  chantiers sur deux semaines ; à droite les devis restant à faire, une liste par société. */
 async function pageVue(config: Config, url: URL, vue: NonNullable<Config['ecran']['vues']>[number]): Promise<string> {
-  const [agendas, ouvertes] = await Promise.all([lireAgendas(config), chargerOuvertes()]);
+  const entites = [...new Set(vue.societes.map((id) => config.dolibarr.entites[id]).filter(Boolean))];
+  const [agendas, ouvertes, signes] = await Promise.all([
+    lireAgendas(config),
+    chargerOuvertes(),
+    Promise.all(entites.map((n) => lireSynchro(`devis_signes:${n}`).catch(() => null))).then((l) =>
+      l.flatMap((j) => (j ? (JSON.parse(j) as DevisSigne[]) : [])).filter((d) => vue.societes.includes(d.societe))
+    ),
+  ]);
   const devis = vue.societes.map((id) => {
     const l = ouvertes.bons.filter((i) => i.societe === id && i.type === 'devis');
     const contenu = ouvertes.erreur ? `<div class="alerte">${e(ouvertes.erreur)}</div>` : l.map((i) => ligneBon(config, i)).join('') || '<div class="vide">Aucun devis en attente</div>';
     return `<section class="extensible"><h2><span class="titre">${logo(id, 'logo-col')}${e(nomSociete(config, id))}</span> <small>devis à faire · ${l.length}</small></h2><div class="liste">${contenu}</div></section>`;
   });
-  const contenu = `<main class="btp">${gantt(config, vue.societes, agendas)}<div class="cote">${devis.join('')}</div></main>`;
+  // Devis signés pas encore dans les plannings (le nom du client n'apparaît dans aucun chantier).
+  const titres = agendas.flatMap((a) => a.periode.flatMap((j) => j.rdvs.map((r) => r.titre)));
+  const aPlanifier = signes.filter((d) => !d.tiersNom || !titres.some((t) => nomPresent(d.tiersNom, t)));
+  const acceptes = `<section class="extensible"><h2><span class="titre">✅ Devis acceptés à planifier</span> <small>${aPlanifier.length}</small></h2><div class="liste">${
+    aPlanifier
+      .map(
+        (d) =>
+          `<div class="bon"><div class="l1"><span>${logo(d.societe)} ${e(d.tiersNom || 'Client')}</span><span class="age">${d.signeLe ? `signé il y a ${depuis(d.signeLe)}` : ''}</span></div><div class="l2">${e(d.libelle || 'Devis')} · ${e(d.ref)}</div></div>`
+      )
+      .join('') || '<div class="vide">Aucun devis accepté en attente</div>'
+  }</div></section>`;
+  const contenu = `<main class="btp">${gantt(config, vue.societes, agendas)}<div class="cote">${devis.join('')}${acceptes}</div></main>`;
   // En-tête court (les sociétés sont dans le Gantt) : l'horloge doit tenir sur la ligne.
   return pageAffichage(config, vue.titre, vue.chemin.slice(1).replace(/^./, (c) => c.toUpperCase()), contenu, zoomDe(url), 'clamp(14px,1.1vw,32px)', vue.chemin);
 }

@@ -13,10 +13,10 @@ const db = vi.hoisted(() => ({
   majIntervention: vi.fn(),
   interventionParCle: vi.fn(async () => null),
   devisAvecProposition: vi.fn(async () => [] as unknown[]),
-  devisOuvertDuTiers: vi.fn(async () => null),
+  devisOuvertsSansProposition: vi.fn(async () => [] as unknown[]),
   devisEnCoursDuTiers: vi.fn(async () => null),
 }));
-const bons = vi.hoisted(() => ({ liste: [] as unknown[], propositions: [] as { id: number; ref: string; socid: number; statut: number; creeLe: Date; totalHt: number; libelle: string; refClient: string }[] }));
+const bons = vi.hoisted(() => ({ liste: [] as unknown[], propositions: [] as { id: number; ref: string; socid: number; statut: number; creeLe: Date; signeLe: Date | null; libelle: string; refClient: string }[] }));
 const publier = vi.hoisted(() => vi.fn());
 vi.mock('./stockage', () => db);
 vi.mock('./rainbow', async () => ({ ...(await vi.importActual<object>('./rainbow')), publier }));
@@ -139,26 +139,25 @@ describe('aller-retour Dolibarr', () => {
     expect(publier.mock.calls[0][1]).toMatch(/✅ INT-2026-0100 · Sud Assainissement[\s\S]*Résidence Les Pins/);
   });
 
-  it('brouillons de devis Dolibarr → devis à faire ; proposition signée → devis réalisé', async () => {
-    const vieux = new Date('2026-09-02T08:00:00Z');
+  it('devis noté dans Rainbow : relié à la proposition Dolibarr du même client, qui le sort des devis à faire', async () => {
     bons.propositions = [
-      { id: 40, ref: 'PR2609-0040', socid: 5, statut: 0, creeLe: vieux, totalHt: 12500, libelle: 'Mur de soutènement', refClient: '' },
-      { id: 41, ref: 'PR2610-0041', socid: 5, statut: 2, creeLe: vieux, totalHt: 800, libelle: 'Regard', refClient: '' },
+      { id: 40, ref: 'PR2610-0040', socid: 5, statut: 1, creeLe: new Date(), signeLe: null, libelle: 'Mur', refClient: '' },
+      { id: 41, ref: 'PR2610-0041', socid: 6, statut: 2, creeLe: new Date(), signeLe: new Date('2026-10-20T10:00:00Z'), libelle: 'Regard', refClient: '' },
     ];
-    db.devisAvecProposition.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: 9, dolibarr_id: 41, statut: 'a_planifier' }]);
+    db.devisOuvertsSansProposition.mockResolvedValueOnce([{ id: 12, reference: 'DEV-2026-0012', client_nom: 'les pins résidence', dolibarr_tiers_id: null, statut: 'a_planifier' }] as never);
     await releverDevisDolibarr({ ...config, dolibarr: { ...config.dolibarr, entites: { 'sud-travaux': 3 } } }, () => {});
-    expect(db.creerInterventionTelephone).toHaveBeenCalledTimes(1);
-    expect(db.creerInterventionTelephone).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'devis', societe: 'sud-travaux', dolibarr_id: 40, dolibarr_ref: 'PR2609-0040', client_nom: 'Résidence Les Pins', nature: 'Mur de soutènement', cree_le: vieux.toISOString() })
-    );
+    expect(db.creerInterventionTelephone).not.toHaveBeenCalled(); // Dolibarr ne crée jamais de devis à faire
+    expect(db.majIntervention).toHaveBeenCalledWith(12, expect.objectContaining({ dolibarr_id: 40, dolibarr_ref: 'PR2610-0040', statut: 'planifiee' }));
+    const signes = JSON.parse(db.ecrireSynchro.mock.calls.at(-1)![1] as string);
+    expect(db.ecrireSynchro.mock.calls.at(-1)![0]).toBe('devis_signes:3');
+    expect(signes).toEqual([{ ref: 'PR2610-0041', societe: 'sud-travaux', tiersNom: '', libelle: 'Regard', signeLe: '2026-10-20T10:00:00.000Z' }]);
+  });
+
+  it('proposition déjà reliée : la demande suit son statut (signée → acceptée)', async () => {
+    bons.propositions = [{ id: 41, ref: 'PR2610-0041', socid: 5, statut: 2, creeLe: new Date(), signeLe: null, libelle: '', refClient: '' }];
+    db.devisAvecProposition.mockResolvedValueOnce([{ id: 9, dolibarr_id: 41, statut: 'planifiee' }]);
+    await releverDevisDolibarr({ ...config, dolibarr: { ...config.dolibarr, entites: { 'sud-travaux': 3 } } }, () => {});
     expect(db.majIntervention).toHaveBeenCalledWith(9, { statut: 'realisee' });
   });
 
-  it('brouillon pour un tiers qui a demandé un devis par mail : rattaché à sa demande', async () => {
-    bons.propositions = [{ id: 42, ref: 'PR2610-0042', socid: 5, statut: 0, creeLe: new Date(), totalHt: 0, libelle: '', refClient: '' }];
-    db.devisOuvertDuTiers.mockResolvedValueOnce({ id: 12, reference: 'DEV-2026-0012' } as never);
-    await releverDevisDolibarr({ ...config, dolibarr: { ...config.dolibarr, entites: { 'sud-travaux': 3 } } }, () => {});
-    expect(db.creerInterventionTelephone).not.toHaveBeenCalled();
-    expect(db.majIntervention).toHaveBeenCalledWith(12, expect.objectContaining({ dolibarr_id: 42, dolibarr_entite: 3, dolibarr_ref: 'PR2610-0042' }));
-  });
 });

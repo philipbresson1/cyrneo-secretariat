@@ -250,24 +250,19 @@ export async function devisEnCoursDuTiers(tiersId: number): Promise<Intervention
   return (data?.[0] as Intervention) ?? null;
 }
 
-/** Demande de devis encore ouverte pour ce tiers, sans proposition Dolibarr (60 jours) : la
- *  proposition que le bureau vient de commencer y répond. */
-export async function devisOuvertDuTiers(tiersId: number): Promise<Intervention | null> {
-  const depuis = new Date(Date.now() - 60 * 86_400_000).toISOString();
-  const data = verifier(
+/** Devis encore à faire d'une société, pas encore reliés à une proposition Dolibarr. */
+export async function devisOuvertsSansProposition(societe: string): Promise<Intervention[]> {
+  return verifier(
     await sb
       .from('interventions')
       .select('*')
       .eq('type', 'devis')
-      .eq('dolibarr_tiers_id', tiersId)
+      .eq('societe', societe)
       .is('dolibarr_id', null)
       .in('statut', ['coordonnees_demandees', 'a_planifier'])
-      .gte('cree_le', depuis)
-      .order('cree_le')
-      .limit(1),
-    'Recherche devis du tiers'
-  );
-  return (data?.[0] as Intervention) ?? null;
+      .order('cree_le'),
+    'Lecture devis ouverts'
+  ) as Intervention[];
 }
 
 export async function lireSynchro(nom: string): Promise<string | null> {

@@ -101,6 +101,15 @@ export function estSyndic(index: IndexTiers, t: Tiers): boolean {
   return (index.enfants.get(t.id)?.length ?? 0) > 0 || RE_SYNDIC.test(`${t.nom} ${t.alias}`);
 }
 
+/** Le nom (client, résidence) se retrouve-t-il dans ce texte (titre d'agenda, nom saisi) ? Tous
+ *  ses mots significatifs doivent y être. */
+export function nomPresent(nom: string, texte: string): boolean {
+  const cherches = mots(nom).filter((m) => !/^\d+$/.test(m));
+  if (cherches.length === 0) return false;
+  const dans = new Set(mots(texte));
+  return cherches.every((m) => dans.has(m));
+}
+
 /** Syndic à l'origine de la demande : celui dont l'expéditeur est l'adresse ou un contact. */
 export function syndicExpediteur(index: IndexTiers, expediteur: string): Tiers | null {
   for (const id of index.parEmail.get(expediteur.toLowerCase()) ?? []) {

@@ -187,7 +187,7 @@ export async function lireBonsRecents(config: Config, entite: number, nombre = 1
   }));
 }
 
-export type PropositionLue = { id: number; ref: string; socid: number; statut: number; creeLe: Date; totalHt: number; libelle: string; refClient: string };
+export type PropositionLue = { id: number; ref: string; socid: number; statut: number; creeLe: Date; signeLe: Date | null; libelle: string; refClient: string };
 
 /** Propositions commerciales (devis) d'une société : les brouillons, ou les plus récentes.
  *  Statuts Dolibarr : 0 brouillon, 1 validée (envoyée), 2 signée, 3 refusée, 4 facturée. */
@@ -211,7 +211,8 @@ export async function lirePropositions(config: Config, entite: number, brouillon
       socid: Number(p.socid) || 0,
       statut: Number(p.statut ?? p.fk_statut ?? p.status) || 0,
       creeLe: new Date(Number(p.datec ?? p.date_creation ?? p.date ?? 0) * 1000),
-      totalHt: Number(p.total_ht) || 0,
+      // Date de signature (clôture) ; les montants ne sont jamais repris : les écrans sont vus par les agents.
+      signeLe: Number(p.date_signature ?? p.date_cloture) > 0 ? new Date(Number(p.date_signature ?? p.date_cloture) * 1000) : null,
       libelle: (texte(p.note_public).replace(/<[^>]+>/g, ' ') || premiere).replace(/\s+/g, ' ').trim().slice(0, 200),
       refClient: texte(p.ref_client),
     };
