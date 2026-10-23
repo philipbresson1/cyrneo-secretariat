@@ -195,6 +195,18 @@ function lireCorps(req: http.IncomingMessage): Promise<URLSearchParams> {
   });
 }
 
+/** Saisie de la clé : on la tape une fois par appareil, elle reste ensuite en cookie. */
+function pageCle(url: URL): string {
+  const erreur = url.searchParams.has('cle') ? '<p class="erreur">Clé incorrecte.</p>' : '';
+  return page(
+    'Accès',
+    `<form method="get" action="${e(url.pathname)}" style="max-width:420px;margin:15vh auto;padding:2rem" class="carte">
+<h1 style="margin-bottom:1rem">Secrétariat CYRNEO</h1>${erreur}
+<p class="vide">Clé d'accès (une seule fois sur cet appareil)</p>
+<input name="cle" type="password" autofocus style="width:100%;margin:.5rem 0 1rem"><button style="width:100%">Entrer</button></form>`
+  );
+}
+
 /** Traite une requête. Partagé entre le serveur du PC et la fonction Vercel (Cyrnehome). */
 export async function gererRequete(req: http.IncomingMessage, res: http.ServerResponse, config: Config, etat: Etat | null, cle: string): Promise<void> {
   const url = new URL(req.url ?? '/', 'http://local');
@@ -208,7 +220,7 @@ export async function gererRequete(req: http.IncomingMessage, res: http.ServerRe
     const entetesCle: Record<string, string> = url.searchParams.get('cle') === cle ? { 'Set-Cookie': `secretariat=${cle}; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000` } : {};
 
     if (url.pathname === '/' || url.pathname === '/ecran') {
-      if (!config.serveur.ecranPublic && !autorise) return envoyer(401, page('Accès', '<p style="padding:2rem">Clé requise.</p>'));
+      if (!config.serveur.ecranPublic && !autorise) return envoyer(401, pageCle(url));
       return envoyer(200, await pageEcran(config), entetesCle);
     }
     if (url.pathname === '/etat') {
@@ -216,7 +228,7 @@ export async function gererRequete(req: http.IncomingMessage, res: http.ServerRe
       res.end(JSON.stringify(etat ?? { mode: 'en ligne' }));
       return;
     }
-    if (!autorise) return envoyer(401, page('Accès', '<p style="padding:2rem">Clé requise : ouvrez cette page avec ?cle=… une première fois.</p>'));
+    if (!autorise) return envoyer(401, pageCle(url));
 
     if (url.pathname === '/interventions' && req.method === 'GET') return envoyer(200, await pageInterventions(config), entetesCle);
     const m = /^\/interventions\/(\d+)$/.exec(url.pathname);
