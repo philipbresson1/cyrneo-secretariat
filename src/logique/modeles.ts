@@ -2,7 +2,7 @@
  * Textes envoyés par le secrétariat : réponses automatiques aux clients et messages
  * Rainbow pour les équipes. Écrits comme le ferait une vraie secrétaire, sans jargon.
  */
-import type { Classification, Intervention, MailRecu, Societe } from './types';
+import type { Classification, Intervention, MailRecu, Societe, TypeDemande } from './types';
 
 export type MailSortant = { sujet: string; texte: string };
 
@@ -90,7 +90,9 @@ export function estProfessionnel(email: string): boolean {
   return email.includes('@') && !WEBMAILS.test(email);
 }
 
-export function coordonneesManquantes(c: Classification, type: 'intervention' | 'devis'): string[] {
+export function coordonneesManquantes(c: Classification, type: TypeDemande): string[] {
+  // Une réclamation se traite avec l'expéditeur, par mail : rien à exiger.
+  if (type === 'reclamation') return [];
   const manquants: string[] = [];
   const lieu = !!(c.contact.adresse || c.contact.commune);
   if (!c.contact.telephone && !(lieu && estProfessionnel(c.contact.email))) manquants.push('telephone');
@@ -139,9 +141,9 @@ export function messageRainbowComplement(mail: MailRecu, c: Classification, s: S
     .join('\n');
 }
 
-export function messageRainbowRelance(mail: MailRecu, c: Classification, s: Societe): string {
+export function messageRainbowRelance(mail: MailRecu, c: Classification, s: Societe, titre = '🔁 Relance client'): string {
   return [
-    `🔁 Relance client · ${s.nom}`,
+    `${titre} · ${s.nom}`,
     `👤 ${c.contact.nom || mail.deNom || mail.deAdresse}${c.contact.telephone ? ` · 📞 ${c.contact.telephone}` : ''}`,
     c.resume ? `📝 ${c.resume}` : '',
     `✉️ ${mail.deAdresse} — « ${mail.sujet} »`,
@@ -150,6 +152,6 @@ export function messageRainbowRelance(mail: MailRecu, c: Classification, s: Soci
     .join('\n');
 }
 
-export function referenceIntervention(id: number, type: 'intervention' | 'devis', annee: number): string {
-  return `${type === 'devis' ? 'DEV' : 'INT'}-${annee}-${String(id).padStart(4, '0')}`;
+export function referenceIntervention(id: number, type: TypeDemande, annee: number): string {
+  return `${{ devis: 'DEV', reclamation: 'REC', intervention: 'INT' }[type]}-${annee}-${String(id).padStart(4, '0')}`;
 }

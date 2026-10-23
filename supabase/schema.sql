@@ -28,7 +28,7 @@ create index idx_journal_expediteur on secretariat_journal (expediteur_adresse);
 create table interventions (
   id bigint generated always as identity primary key,
   reference text unique,
-  type text not null check (type in ('intervention', 'devis')),
+  type text not null check (type in ('intervention', 'devis', 'reclamation')),
   societe text not null,
   statut text not null check (statut in ('coordonnees_demandees', 'a_planifier', 'planifiee', 'realisee', 'annulee')),
   urgence text not null default 'normale' check (urgence in ('urgente', 'normale')),

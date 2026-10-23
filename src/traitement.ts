@@ -106,8 +106,8 @@ export async function traiterMail(mail: MailRecu, boite: Boite, config: Config):
         const texte =
           a.gabarit === 'complement' && intervention
             ? `${messageRainbowComplement(mail, classification, s, intervention)}${a.suite !== 'À rappeler pour planifier.' ? `\n⚠️ ${a.suite}` : ''}`
-            : a.gabarit === 'relance'
-              ? messageRainbowRelance(mail, classification, s)
+            : a.gabarit === 'relance' || a.gabarit === 'reclamation'
+              ? messageRainbowRelance(mail, classification, s, a.gabarit === 'reclamation' ? `${classification.urgence === 'urgente' ? '🚨' : '⚠️'} Réclamation ${intervention?.reference ?? ''}`.trim() : undefined)
               : messageRainbow(mail, classification, s, ref, a.suite);
         const bulle = config.mode === 'test' ? config.test.bulleRainbow : s.bulleRainbow;
         await executer('rainbow', simulation, `bulle « ${bulle} »`, async () => {

@@ -120,6 +120,9 @@ export async function genererRapport(config: Config, jour: string): Promise<stri
   const fd = feuille(classeur, 'Demandes de devis', COLONNES_INTER);
   inters.filter((i) => i.type === 'devis').forEach((i) => fd.addRow(ligneInter(config, i)));
 
+  const fr = feuille(classeur, 'Réclamations', COLONNES_INTER);
+  inters.filter((i) => i.type === 'reclamation').forEach((i) => fr.addRow(ligneInter(config, i)));
+
   const ff = feuille(classeur, 'Factures reçues', COLONNES_JOURNAL);
   journal.filter((j) => j.categorie === 'facture_recue').forEach((j) => ff.addRow(ligneJournal(config, j)));
 

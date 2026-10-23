@@ -158,6 +158,8 @@ main.bureau{display:block}
 .fiche .nat{font-size:1.05rem;margin:.2rem 0}
 .fiche .l2{color:var(--doux);font-size:.9rem}
 .fiche .etat{color:var(--attente);font-size:.9rem;margin-top:.2rem}
+.tag{display:inline-block;background:var(--urgent);color:#fff;border-radius:6px;padding:0 .45rem;font-size:.8em;font-weight:700;vertical-align:.1em}
+.tag.devis{background:#3fa7d6}
 .compteurs{display:flex;gap:.7rem;padding:.7rem 1.2rem 0}
 .compteur{flex:1;background:var(--carte);border-radius:10px;padding:.5rem .9rem;display:flex;align-items:baseline;gap:.6rem}
 .compteur b{font-size:2.2rem}.compteur span{color:var(--doux)}
@@ -195,12 +197,22 @@ function colonnePlanning(titre: string, agendas: AgendaLu[], maintenant: number)
   }${demain.length ? `<div class="sep">Demain · ${demain.length}</div>${demain.map((x) => ligneRdv(x.r, x.a, plusieurs, maintenant)).join('')}` : ''}</div></section>`;
 }
 
+/** « demandées » seulement si un mail est vraiment parti ; sinon, en simulation ou sans
+ *  réponse automatique, l'info manque et c'est au bureau d'appeler. */
+function libelleAttente(i: Intervention): string {
+  return i.relance_message_id ? 'coordonnées demandées au client par mail' : 'coordonnées manquantes, à obtenir';
+}
+
+function etiquette(i: Intervention): string {
+  return i.type === 'reclamation' ? '<span class="tag">Réclamation</span> ' : i.type === 'devis' ? '<span class="tag devis">Devis</span> ' : '';
+}
+
 function ligneBon(config: Config, i: Intervention): string {
   const attente = i.statut === 'coordonnees_demandees';
   const classe = i.urgence === 'urgente' ? 'urgente' : attente ? 'attente' : '';
   const lieu = [i.commune || i.adresse, nomSociete(config, i.societe)].filter(Boolean).join(' · ');
   return `<div class="bon ${classe}"><div class="l1"><span>${i.urgence === 'urgente' ? '🚨 ' : ''}${e(i.client_nom || 'Client')}</span><span class="age">${depuis(i.cree_le)}</span></div>
-<div class="l2">${e(i.nature || i.resume)}</div><div class="l2">${attente ? '⏳ coordonnées attendues · ' : ''}${e(lieu)}${i.client_telephone ? ` · ${e(i.client_telephone)}` : ''}</div></div>`;
+<div class="l2">${etiquette(i)}${e(i.nature || i.resume)}</div><div class="l2">${attente ? `⏳ ${libelleAttente(i)} · ` : ''}${e(lieu)}${i.client_telephone ? ` · ${e(i.client_telephone)}` : ''}</div></div>`;
 }
 
 /** Taille réglable dans l'adresse (?zoom=1.3) : chaque TV a sa distance de lecture. */
@@ -259,10 +271,10 @@ function ficheBon(config: Config, i: Intervention): string {
   const classe = i.urgence === 'urgente' ? 'urgente' : attente ? 'attente' : '';
   const lieu = [i.adresse, i.commune].filter(Boolean).join(', ');
   return `<div class="fiche ${classe}"><div class="l1"><span>${i.urgence === 'urgente' ? '🚨 ' : ''}${e(i.client_nom || 'Client')}</span><span class="age">${depuis(i.cree_le)}</span></div>
-<div class="nat">${e(i.nature || i.resume)}</div>
+<div class="nat">${etiquette(i)}${e(i.nature || i.resume)}</div>
 ${lieu ? `<div class="l2">📍 ${e(lieu)}</div>` : ''}
 <div class="l2">${i.client_telephone ? `📞 ${e(i.client_telephone)} · ` : ''}${e(nomSociete(config, i.societe))} · ${e(i.reference)}${i.dolibarr_ref ? ` · ${e(i.dolibarr_ref)}` : ''}</div>
-${attente ? '<div class="etat">⏳ coordonnées demandées au client</div>' : i.date_souhaitee ? `<div class="etat">📅 souhaité : ${e(i.date_souhaitee)}</div>` : ''}</div>`;
+${attente ? `<div class="etat">⏳ ${libelleAttente(i)}</div>` : i.date_souhaitee ? `<div class="etat">📅 souhaité : ${e(i.date_souhaitee)}</div>` : ''}</div>`;
 }
 
 /** Écran du bureau : les interventions à prévoir, en grandes fiches, avec les compteurs. */
@@ -270,10 +282,11 @@ async function pageBureau(config: Config, url: URL): Promise<string> {
   const { bons, erreur } = await chargerBons();
   const maintenant = Date.now();
   const urgentes = bons.filter((i) => i.urgence === 'urgente').length;
+  const reclamations = bons.filter((i) => i.type === 'reclamation').length;
   const attente = bons.filter((i) => i.statut === 'coordonnees_demandees').length;
   const retard = bons.filter((i) => maintenant - new Date(i.cree_le).getTime() > 24 * 3_600_000).length;
   const compteur = (n: number, libelle: string, classe = '') => `<div class="compteur ${n && classe ? classe : ''}"><b>${n}</b><span>${libelle}</span></div>`;
-  const contenu = `<div class="compteurs">${compteur(bons.length, 'à prévoir')}${compteur(urgentes, 'urgentes', 'rouge')}${compteur(retard, 'depuis + 24 h', 'rouge')}${compteur(attente, 'attendent le client', 'orange')}</div>
+  const contenu = `<div class="compteurs">${compteur(bons.length, 'à prévoir')}${compteur(urgentes, 'urgentes', 'rouge')}${compteur(retard, 'depuis + 24 h', 'rouge')}${compteur(reclamations, 'réclamations', 'rouge')}${compteur(attente, 'coordonnées manquantes', 'orange')}</div>
 <main class="bureau"><div class="liste grille">${
     erreur ? `<div class="alerte">${e(erreur)}</div>` : bons.map((i) => ficheBon(config, i)).join('') || '<div class="vide">Tout est planifié 👍</div>'
   }</div></main>`;

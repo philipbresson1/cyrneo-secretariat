@@ -12,6 +12,7 @@ export type Categorie =
   | 'demande_devis'
   | 'complement_coordonnees' // réponse d'un client à notre demande de coordonnées
   | 'relance_client' // client qui relance une demande déjà faite
+  | 'reclamation' // litige, facture contestée, client mécontent, refus d'un partenaire
   | 'facture_recue'
   | 'administratif' // banque, URSSAF, assurance, fournisseur sans facture…
   | 'publicite'
@@ -22,6 +23,7 @@ export const CATEGORIES: Categorie[] = [
   'demande_devis',
   'complement_coordonnees',
   'relance_client',
+  'reclamation',
   'facture_recue',
   'administratif',
   'publicite',
@@ -33,6 +35,7 @@ export const LIBELLES_CATEGORIES: Record<Categorie, string> = {
   demande_devis: 'Demande de devis',
   complement_coordonnees: 'Coordonnées complétées',
   relance_client: 'Relance client',
+  reclamation: 'Réclamation',
   facture_recue: 'Facture reçue',
   administratif: 'Administratif',
   publicite: 'Publicité',
@@ -129,12 +132,14 @@ export type Classification = {
   contact: Contact;
 };
 
+export type TypeDemande = 'intervention' | 'devis' | 'reclamation';
+
 export type StatutIntervention = 'coordonnees_demandees' | 'a_planifier' | 'planifiee' | 'realisee' | 'annulee';
 
 export type Intervention = {
   id: number;
   reference: string;
-  type: 'intervention' | 'devis';
+  type: TypeDemande;
   societe: string;
   statut: StatutIntervention;
   urgence: 'urgente' | 'normale';
@@ -159,9 +164,9 @@ export type Intervention = {
 /** Ce que le secrétariat décide de faire d'un mail. L'exécution est séparée de la
  *  décision : c'est ce qui permet le mode simulation et des tests sans réseau. */
 export type Action =
-  | { type: 'creer_intervention'; nature: 'intervention' | 'devis'; statut: StatutIntervention }
+  | { type: 'creer_intervention'; nature: TypeDemande; statut: StatutIntervention }
   | { type: 'completer_intervention'; interventionId: number; statut: StatutIntervention }
-  | { type: 'rainbow'; societe: string; gabarit: 'nouvelle' | 'complement' | 'relance'; suite: string }
+  | { type: 'rainbow'; societe: string; gabarit: 'nouvelle' | 'complement' | 'relance' | 'reclamation'; suite: string }
   | { type: 'repondre'; modele: 'accuse_intervention' | 'accuse_devis' | 'demande_coordonnees'; manquants: string[] }
   | { type: 'classer_pieces_jointes' }
   | { type: 'transferer'; vers: string[] }

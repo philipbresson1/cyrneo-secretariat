@@ -82,13 +82,13 @@ describe('titres d’agenda', () => {
 });
 
 describe('rapport Excel', () => {
-  it('écrit les cinq feuilles avec les bonnes lignes', async () => {
+  it('écrit les six feuilles avec les bonnes lignes', async () => {
     dossier = await mkdtemp(path.join(os.tmpdir(), 'rapport-'));
     const { genererRapport } = await import('./rapport-excel');
     const fichier = await genererRapport({ ...config, dossiers: { factures: dossier, rapports: dossier } }, '2026-10-22');
     const c = new ExcelJS.Workbook();
     await c.xlsx.readFile(fichier);
-    expect(c.worksheets.map((f) => f.name)).toEqual(['Interventions demandées', 'Demandes de devis', 'Factures reçues', 'Suivi (tout ce qui est ouvert)', 'Journal complet']);
+    expect(c.worksheets.map((f) => f.name)).toEqual(['Interventions demandées', 'Demandes de devis', 'Réclamations', 'Factures reçues', 'Suivi (tout ce qui est ouvert)', 'Journal complet']);
     expect(c.getWorksheet('Interventions demandées')!.getRow(2).getCell(1).value).toBe('INT-2026-0001');
     expect(c.getWorksheet('Factures reçues')!.rowCount).toBe(2);
     // 07:00 UTC = 09:00 à Paris en octobre (heure d'été)

@@ -91,6 +91,11 @@ export function decider(mail: MailRecu, c: Classification, ctx: Contexte): Actio
       actions.push({ type: 'rainbow', societe, gabarit: 'nouvelle', suite });
       break;
     }
+    case 'reclamation':
+      // Sur l'écran du bureau avec les interventions à prévoir ; jamais de réponse automatique.
+      actions.push({ type: 'creer_intervention', nature: 'reclamation', statut: 'a_planifier' });
+      actions.push({ type: 'rainbow', societe, gabarit: 'reclamation', suite: 'À traiter.' });
+      break;
     case 'relance_client':
       actions.push({ type: 'rainbow', societe, gabarit: 'relance', suite: 'Client à rappeler.' });
       break;

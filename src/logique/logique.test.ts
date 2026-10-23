@@ -180,6 +180,15 @@ describe('décision', () => {
     expect(decider(mail(), classification(), ctx({ config: cfg, interventionLiee: liee })).map((a) => a.type)).toContain('bon_dolibarr');
   });
 
+  it('réclamation : fiche sur l’écran du bureau, Rainbow, jamais de réponse automatique', () => {
+    const actions = decider(mail(), classification({ categorie: 'reclamation' }), ctx());
+    expect(actions).toEqual([
+      { type: 'creer_intervention', nature: 'reclamation', statut: 'a_planifier' },
+      { type: 'rainbow', societe: 'sud-assainissement', gabarit: 'reclamation', suite: 'À traiter.' },
+    ]);
+    expect(referenceIntervention(5, 'reclamation', 2026)).toBe('REC-2026-0005');
+  });
+
   it('publicité : rien à faire', () => {
     expect(decider(mail(), classification({ categorie: 'publicite' }), ctx())).toEqual([]);
   });

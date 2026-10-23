@@ -2,7 +2,7 @@
  * Accès Supabase du secrétariat (clé service-role, PC uniquement).
  */
 import { creerClientAdmin } from '../lib/supabase/admin';
-import type { ActionExecutee, Classification, Intervention, MailRecu, StatutIntervention } from '../logique/types';
+import type { ActionExecutee, Classification, Intervention, MailRecu, StatutIntervention, TypeDemande } from '../logique/types';
 import { referenceIntervention } from '../logique/modeles';
 
 // Créé au premier appel : .env.local doit être chargé avant.
@@ -119,7 +119,7 @@ export async function creerIntervention(
   mail: MailRecu,
   c: Classification,
   societe: string,
-  type: 'intervention' | 'devis',
+  type: TypeDemande,
   statut: StatutIntervention
 ): Promise<Intervention> {
   const cree = verifier(
