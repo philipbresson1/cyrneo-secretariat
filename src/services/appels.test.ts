@@ -12,14 +12,17 @@ const db = vi.hoisted(() => ({
   interventionsAvecBon: vi.fn(async () => []),
   majIntervention: vi.fn(),
   interventionParCle: vi.fn(async () => null),
+  devisAvecProposition: vi.fn(async () => [] as unknown[]),
+  devisOuvertDuTiers: vi.fn(async () => null),
 }));
-const bons = vi.hoisted(() => ({ liste: [] as unknown[] }));
+const bons = vi.hoisted(() => ({ liste: [] as unknown[], propositions: [] as { id: number; ref: string; socid: number; statut: number; creeLe: Date; totalHt: number; libelle: string; refClient: string }[] }));
 const publier = vi.hoisted(() => vi.fn());
 vi.mock('./stockage', () => db);
 vi.mock('./rainbow', async () => ({ ...(await vi.importActual<object>('./rainbow')), publier }));
 vi.mock('./dolibarr', async () => ({
   ...(await vi.importActual<object>('./dolibarr')),
   lireBonsRecents: vi.fn(async () => bons.liste),
+  lirePropositions: vi.fn(async (_c: unknown, _e: number, brouillons: boolean) => (brouillons ? bons.propositions.filter((p) => p.statut === 0) : bons.propositions)),
   bonParRef: vi.fn(async (_c: unknown, entite: number, ref: string) => (entite === 2 ? { id: 99, ref, socid: 5 } : null)),
 }));
 const classer = vi.hoisted(() => vi.fn());
@@ -37,7 +40,7 @@ beforeEach(() => {
   index.courant = indexer([{ id: 5, nom: 'Résidence Les Pins', alias: '', code_client: 'CU5', code_fournisseur: '', siret: '', tva_intra: '', adresse: 'Route des Sanguinaires', cp: '20000', ville: 'Ajaccio', telephone: '04 95 00 00 00', email: '', parent_id: null, client: 1, fournisseur: 0, actif: true, note_publique: '', note_privee: '' }], []);
 });
 
-import { numeroBon, releverBonsDolibarr, societeDeLaBulle, traiterMessageBulle } from './appels';
+import { numeroBon, releverBonsDolibarr, releverDevisDolibarr, societeDeLaBulle, traiterMessageBulle } from './appels';
 
 const config = validerConfig({ ...exemple, mode: 'reel', dolibarr: { ...exemple.dolibarr, entites: { 'sud-assainissement': 2 } } });
 const bon = (id: number, jours = 1, statut = 0) => ({ id, ref: `FI${id}`, socid: 5, description: 'Vidange fosse\nurgent', statut, creeLe: new Date(Date.now() - jours * 86_400_000), refClient: '' });
@@ -111,5 +114,28 @@ describe('aller-retour Dolibarr', () => {
     expect(db.creerInterventionTelephone).toHaveBeenCalledWith(expect.objectContaining({ source: 'rainbow', cle: 'rainbow:m3', dolibarr_tiers_id: 5 }));
     expect(publier.mock.calls[0][0]).toBe('Intervention SUD ASSAINISSEMENT');
     expect(publier.mock.calls[0][1]).toMatch(/✅ INT-2026-0100 · Sud Assainissement[\s\S]*Résidence Les Pins/);
+  });
+
+  it('brouillons de devis Dolibarr → devis à faire ; proposition signée → devis réalisé', async () => {
+    const vieux = new Date('2026-09-02T08:00:00Z');
+    bons.propositions = [
+      { id: 40, ref: 'PR2609-0040', socid: 5, statut: 0, creeLe: vieux, totalHt: 12500, libelle: 'Mur de soutènement', refClient: '' },
+      { id: 41, ref: 'PR2610-0041', socid: 5, statut: 2, creeLe: vieux, totalHt: 800, libelle: 'Regard', refClient: '' },
+    ];
+    db.devisAvecProposition.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: 9, dolibarr_id: 41, statut: 'a_planifier' }]);
+    await releverDevisDolibarr({ ...config, dolibarr: { ...config.dolibarr, entites: { 'sud-travaux': 3 } } }, () => {});
+    expect(db.creerInterventionTelephone).toHaveBeenCalledTimes(1);
+    expect(db.creerInterventionTelephone).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'devis', societe: 'sud-travaux', dolibarr_id: 40, dolibarr_ref: 'PR2609-0040', client_nom: 'Résidence Les Pins', nature: 'Mur de soutènement', cree_le: vieux.toISOString() })
+    );
+    expect(db.majIntervention).toHaveBeenCalledWith(9, { statut: 'realisee' });
+  });
+
+  it('brouillon pour un tiers qui a demandé un devis par mail : rattaché à sa demande', async () => {
+    bons.propositions = [{ id: 42, ref: 'PR2610-0042', socid: 5, statut: 0, creeLe: new Date(), totalHt: 0, libelle: '', refClient: '' }];
+    db.devisOuvertDuTiers.mockResolvedValueOnce({ id: 12, reference: 'DEV-2026-0012' } as never);
+    await releverDevisDolibarr({ ...config, dolibarr: { ...config.dolibarr, entites: { 'sud-travaux': 3 } } }, () => {});
+    expect(db.creerInterventionTelephone).not.toHaveBeenCalled();
+    expect(db.majIntervention).toHaveBeenCalledWith(12, expect.objectContaining({ dolibarr_id: 42, dolibarr_entite: 3, dolibarr_ref: 'PR2610-0042' }));
   });
 });

@@ -8,6 +8,7 @@
  *   npm start -- bulles        liste les bulles Rainbow visibles par le compte
  *   npm start -- dolibarr      vérifie l'accès Dolibarr, société par société
  *   npm start -- tiers         recopie maintenant la liste des tiers Dolibarr
+ *   npm start -- devis         relève maintenant les devis (propositions) Dolibarr
  *   npm start -- essai-bon REF bon Dolibarr + message bulle de test pour une fiche existante
  *   npm start -- verifier      teste chaque branchement : base, Claude, boîtes mail, agendas
  *   npm start -- rappels [apercu]   rappels des rendez-vous de demain (apercu : n'envoie rien)
@@ -28,7 +29,7 @@ import { classer } from './services/classifieur';
 import { genererRapport } from './services/rapport-excel';
 import { envoyer } from './services/smtp';
 import { arreter as arreterRainbow, bullesAttendues, ecouterBulles, listerBulles, publier, type MessageBulle } from './services/rainbow';
-import { releverBonsDolibarr, traiterMessageBulle } from './services/appels';
+import { releverBonsDolibarr, releverDevisDolibarr, traiterMessageBulle } from './services/appels';
 import { creerBonIntervention, entiteDe, listerEntites, verifierDroits } from './services/dolibarr';
 import { blocRainbow, reconnaitreTiers, synchroDue, synchroniserTiers } from './services/tiers';
 import { envoyerRappels, type BilanRappels } from './services/rappels';
@@ -158,6 +159,7 @@ async function boucle(config: Config): Promise<void> {
   let dernierRapport = '';
   let dernierRappel = '';
   let derniereVerifTiers = 0;
+  let derniereReleveDevis = 0;
 
   // Demandes notées dans les bulles : traitées une par une, dans l'ordre d'arrivée.
   let file = Promise.resolve();
@@ -186,6 +188,11 @@ async function boucle(config: Config): Promise<void> {
 
     if (dolibarrPret()) {
       await releverBonsDolibarr(config, log).catch((e) => log(`⚠️ Bons Dolibarr : ${e instanceof Error ? e.message : String(e)}`));
+      // Devis (propositions commerciales) : tous les quarts d'heure.
+      if (Date.now() - derniereReleveDevis > 15 * 60_000) {
+        derniereReleveDevis = Date.now();
+        await releverDevisDolibarr(config, log).catch((e) => log(`⚠️ Devis Dolibarr : ${e instanceof Error ? e.message : String(e)}`));
+      }
     }
 
     const maintenant = new Date();
@@ -364,6 +371,11 @@ async function principal() {
     case 'rappels':
       afficherRappels(await envoyerRappels(config, new Date(), argument === 'apercu'));
       return;
+    case 'devis':
+      if (await synchroDue()) console.log(`Tiers Dolibarr synchronisés : ${await synchroniserTiers(config)}`);
+      await releverDevisDolibarr(config, (t) => console.log(t));
+      console.log('Devis Dolibarr relevés.');
+      return;
     case 'tiers':
       console.log(`Synchronisation des tiers Dolibarr… ${await synchroniserTiers(config)}`);
       return;
@@ -396,7 +408,7 @@ async function principal() {
       return;
     }
     default:
-      throw new Error(`Commande inconnue « ${commande} » (demarrer, une-fois, essai, essai-bon, tiers, rapport, bulles, dolibarr, verifier, rappels)`);
+      throw new Error(`Commande inconnue « ${commande} » (demarrer, une-fois, essai, essai-bon, tiers, devis, rapport, bulles, dolibarr, verifier, rappels)`);
   }
 }
 

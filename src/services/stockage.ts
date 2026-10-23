@@ -181,7 +181,7 @@ export async function creerInterventionManuelle(d: NouvelleDemande): Promise<Int
 
 /** Demande reçue par téléphone, saisie dans Dolibarr ou écrite dans une bulle Rainbow. */
 export async function creerInterventionTelephone(
-  d: NouvelleDemande & { source: 'dolibarr' | 'rainbow'; cle: string; resume: string; statut?: StatutIntervention } & Partial<Pick<Intervention, 'dolibarr_id' | 'dolibarr_entite' | 'dolibarr_ref' | 'dolibarr_tiers_id'>>
+  d: NouvelleDemande & { source: 'dolibarr' | 'rainbow'; cle: string; resume: string; statut?: StatutIntervention } & Partial<Pick<Intervention, 'dolibarr_id' | 'dolibarr_entite' | 'dolibarr_ref' | 'dolibarr_tiers_id' | 'cree_le'>>
 ): Promise<Intervention> {
   const { cle, statut = 'a_planifier', ...champs } = d;
   const cree = verifier(
@@ -203,7 +203,7 @@ export async function interventionDuBon(entite: number, id: number, ref: string,
   const ou = [`and(dolibarr_entite.eq.${entite},dolibarr_id.eq.${id})`];
   if (ref) ou.push(`dolibarr_ref.eq.${ref.replace(/[^\w-]/g, '')}`);
   if (/^(INT|DEV|REC)-\d{4}-\d+$/.test(refClient)) ou.push(`reference.eq.${refClient}`);
-  const data = verifier(await sb.from('interventions').select('*').or(ou.join(',')).limit(1), 'Recherche intervention du bon');
+  const data = verifier(await sb.from('interventions').select('*').neq('type', 'devis').or(ou.join(',')).limit(1), 'Recherche intervention du bon');
   return (data?.[0] as Intervention) ?? null;
 }
 
@@ -216,7 +216,7 @@ export async function interventionRecenteSemblable(tiersId: number | null, telep
   const ou = [tiersId ? `dolibarr_tiers_id.eq.${tiersId}` : '', tel.length === 9 ? `client_telephone.ilike.%${tel.slice(0, 1)}%${tel.slice(1, 3)}%${tel.slice(3, 5)}%${tel.slice(5, 7)}%${tel.slice(7)}` : ''].filter(Boolean);
   if (ou.length === 0) return null;
   const data = verifier(
-    await sb.from('interventions').select('*').in('statut', ouverte).gte('cree_le', depuis).is('dolibarr_id', null).or(ou.join(',')).order('cree_le', { ascending: false }).limit(1),
+    await sb.from('interventions').select('*').neq('type', 'devis').in('statut', ouverte).gte('cree_le', depuis).is('dolibarr_id', null).or(ou.join(',')).order('cree_le', { ascending: false }).limit(1),
     'Recherche intervention semblable'
   );
   return (data?.[0] as Intervention) ?? null;
@@ -225,7 +225,39 @@ export async function interventionRecenteSemblable(tiersId: number | null, telep
 /** Fiches liées à des bons Dolibarr d'une société (pour suivre leur statut). */
 export async function interventionsAvecBon(entite: number, ids: number[]): Promise<Intervention[]> {
   if (ids.length === 0) return [];
-  return verifier(await sb.from('interventions').select('*').eq('dolibarr_entite', entite).in('dolibarr_id', ids), 'Lecture interventions avec bon') as Intervention[];
+  return verifier(
+    await sb.from('interventions').select('*').neq('type', 'devis').eq('dolibarr_entite', entite).in('dolibarr_id', ids),
+    'Lecture interventions avec bon'
+  ) as Intervention[];
+}
+
+/** Devis liés à des propositions commerciales Dolibarr d'une société. */
+export async function devisAvecProposition(entite: number, ids: number[]): Promise<Intervention[]> {
+  if (ids.length === 0) return [];
+  return verifier(
+    await sb.from('interventions').select('*').eq('type', 'devis').eq('dolibarr_entite', entite).in('dolibarr_id', ids),
+    'Lecture devis'
+  ) as Intervention[];
+}
+
+/** Demande de devis encore ouverte pour ce tiers, sans proposition Dolibarr (60 jours) : la
+ *  proposition que le bureau vient de commencer y répond. */
+export async function devisOuvertDuTiers(tiersId: number): Promise<Intervention | null> {
+  const depuis = new Date(Date.now() - 60 * 86_400_000).toISOString();
+  const data = verifier(
+    await sb
+      .from('interventions')
+      .select('*')
+      .eq('type', 'devis')
+      .eq('dolibarr_tiers_id', tiersId)
+      .is('dolibarr_id', null)
+      .in('statut', ['coordonnees_demandees', 'a_planifier'])
+      .gte('cree_le', depuis)
+      .order('cree_le')
+      .limit(1),
+    'Recherche devis du tiers'
+  );
+  return (data?.[0] as Intervention) ?? null;
 }
 
 export async function lireSynchro(nom: string): Promise<string | null> {

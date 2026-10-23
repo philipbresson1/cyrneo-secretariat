@@ -187,6 +187,37 @@ export async function lireBonsRecents(config: Config, entite: number, nombre = 1
   }));
 }
 
+export type PropositionLue = { id: number; ref: string; socid: number; statut: number; creeLe: Date; totalHt: number; libelle: string; refClient: string };
+
+/** Propositions commerciales (devis) d'une société : les brouillons, ou les plus récentes.
+ *  Statuts Dolibarr : 0 brouillon, 1 validée (envoyée), 2 signée, 3 refusée, 4 facturée. */
+export async function lirePropositions(config: Config, entite: number, brouillons: boolean): Promise<PropositionLue[]> {
+  const chemin = brouillons
+    ? `/proposals?limit=500&sortfield=t.rowid&sortorder=ASC&sqlfilters=${encodeURIComponent('(t.fk_statut:=:0)')}`
+    : '/proposals?limit=200&sortfield=t.rowid&sortorder=DESC';
+  let liste: Record<string, unknown>[];
+  try {
+    liste = (await appel<Record<string, unknown>[]>(config, entite, 'GET', chemin)) ?? [];
+  } catch (e) {
+    if (e instanceof ErreurDolibarr && e.statut === 404) return [];
+    throw e;
+  }
+  return liste.map((p) => {
+    const lignes = Array.isArray(p.lines) ? (p.lines as Record<string, unknown>[]) : [];
+    const premiere = texte(lignes[0]?.desc ?? lignes[0]?.description ?? lignes[0]?.product_label).replace(/<[^>]+>/g, ' ');
+    return {
+      id: Number(p.id),
+      ref: texte(p.ref),
+      socid: Number(p.socid) || 0,
+      statut: Number(p.statut ?? p.fk_statut ?? p.status) || 0,
+      creeLe: new Date(Number(p.datec ?? p.date_creation ?? p.date ?? 0) * 1000),
+      totalHt: Number(p.total_ht) || 0,
+      libelle: (texte(p.note_public).replace(/<[^>]+>/g, ' ') || premiere).replace(/\s+/g, ' ').trim().slice(0, 200),
+      refClient: texte(p.ref_client),
+    };
+  });
+}
+
 /** Bon d'intervention par sa référence (ex. FI2610-0012), ou null. */
 export async function bonParRef(config: Config, entite: number, ref: string): Promise<BonLu | null> {
   try {

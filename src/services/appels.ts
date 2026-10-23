@@ -12,12 +12,74 @@
 import type { Classification, Config, Intervention, MailRecu, Societe } from '../logique/types';
 import { choisirBulle } from '../logique/decision';
 import { classer } from './classifieur';
-import { bonParRef, entiteDe, lireBonsRecents, type BonLu } from './dolibarr';
+import { bonParRef, entiteDe, lireBonsRecents, lirePropositions, type BonLu, type PropositionLue } from './dolibarr';
 import { memeBulle, publier, type MessageBulle } from './rainbow';
 import * as db from './stockage';
 import { blocRainbow, indexTiers, reconnaitreTiers, type TiersReconnu } from './tiers';
 
 type Journal = (texte: string) => void;
+
+const STATUT_DEVIS: Record<number, Intervention['statut']> = { 0: 'a_planifier', 1: 'planifiee', 2: 'realisee', 3: 'annulee', 4: 'realisee' };
+
+/** Devis : les propositions commerciales en brouillon dans Dolibarr sont les « devis à faire ».
+ *  Chaque brouillon a sa fiche (rattachée à la demande de devis reçue par mail pour le même
+ *  tiers s'il y en a une) ; quand la proposition est validée, signée ou refusée, la fiche suit. */
+export async function releverDevisDolibarr(config: Config, log: Journal): Promise<void> {
+  const idx = await indexTiers();
+  for (const entite of new Set(Object.values(config.dolibarr.entites))) {
+    const s = societeDeLEntite(config, entite);
+    if (!s) continue;
+    const brouillons = await lirePropositions(config, entite, true);
+    const connus = new Set((await db.devisAvecProposition(entite, brouillons.map((p) => p.id))).map((i) => i.dolibarr_id));
+    let nouveaux = 0;
+    for (const p of brouillons.filter((x) => !connus.has(x.id))) {
+      try {
+        await importerProposition(s, entite, p, idx);
+        nouveaux += 1;
+      } catch (e) {
+        log(`⚠️ Devis Dolibarr ${p.ref} : ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+    if (nouveaux) log(`Devis Dolibarr ${s.nom} : ${nouveaux} brouillon(s) ajouté(s) aux devis à faire`);
+
+    // Suivi des propositions récentes : validée → envoyée, signée → réalisée, refusée → annulée.
+    const recentes = await lirePropositions(config, entite, false);
+    const parId = new Map(recentes.map((p) => [p.id, p]));
+    for (const fiche of await db.devisAvecProposition(entite, recentes.map((p) => p.id))) {
+      const p = parId.get(fiche.dolibarr_id!)!;
+      const statut = STATUT_DEVIS[p.statut];
+      if (statut && statut !== fiche.statut) await db.majIntervention(fiche.id, { statut });
+    }
+  }
+}
+
+async function importerProposition(s: Societe, entite: number, p: PropositionLue, idx: Awaited<ReturnType<typeof indexTiers>>): Promise<void> {
+  const t = idx.tiers.get(p.socid) ?? null;
+  const lien = { dolibarr_id: p.id, dolibarr_entite: entite, dolibarr_ref: p.ref, dolibarr_tiers_id: t?.id ?? null };
+  const demande = t ? await db.devisOuvertDuTiers(t.id) : null;
+  if (demande) {
+    await db.majIntervention(demande.id, lien);
+    return;
+  }
+  await db.creerInterventionTelephone({
+    source: 'dolibarr',
+    cle: `dolibarr-devis:${entite}:${p.id}`,
+    type: 'devis',
+    societe: s.id,
+    urgence: 'normale',
+    client_nom: t?.nom ?? '',
+    client_telephone: t?.telephone ?? '',
+    client_email: t?.email ?? '',
+    adresse: t?.adresse ?? '',
+    commune: t?.ville ?? '',
+    nature: p.libelle || `Devis ${p.ref}`,
+    date_souhaitee: '',
+    resume: `Proposition ${p.ref} en brouillon dans Dolibarr${p.totalHt ? ` (${p.totalHt.toLocaleString('fr-FR')} € HT)` : ''}`,
+    // Date de la proposition : un brouillon ancien ne passe pas pour une demande du jour.
+    ...(p.creeLe.getTime() > 0 ? { cree_le: p.creeLe.toISOString() } : {}),
+    ...lien,
+  });
+}
 
 /** Société de chaque entité Dolibarr (la première déclarée quand plusieurs partagent une entité). */
 function societeDeLEntite(config: Config, entite: number): Societe | null {
