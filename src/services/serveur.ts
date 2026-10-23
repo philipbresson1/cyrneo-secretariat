@@ -11,7 +11,7 @@ import { randomUUID } from 'node:crypto';
 import type { Config, Intervention, StatutIntervention } from '../logique/types';
 import { LIBELLES_CATEGORIES, type Categorie } from '../logique/types';
 import { decalageParis, rdvDuJour, type Rdv } from '../lib/agenda';
-import { chercherJournal, interventionsOuvertes, majIntervention } from './stockage';
+import { chercherJournal, creerInterventionManuelle, interventionsOuvertes, majIntervention, type NouvelleDemande } from './stockage';
 
 export type Etat = { demarreLe: Date; dernierPassage: Date | null; erreurs: string[]; mode: string };
 
@@ -148,6 +148,20 @@ section h2 small{font-size:.85rem;color:var(--doux);font-weight:500}
 .bon .l2{color:var(--doux);font-size:.85rem;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .alerte{color:var(--urgent)}
 #retards{background:var(--urgent);color:#fff;border-radius:999px;padding:0 .6rem;font-size:.85rem}
+main.equipes{grid-template-columns:repeat(var(--cols),1fr)}
+main.bureau{display:block}
+.grille{display:grid;grid-template-columns:repeat(auto-fill,minmax(22rem,1fr));grid-auto-rows:min-content;gap:.7rem;height:100%;align-content:start}
+.fiche{padding:.7rem .9rem;border-left:7px solid var(--ok);background:var(--carte);border-radius:10px;line-height:1.3}
+.fiche.urgente{border-color:var(--urgent);background:#2a1418}.fiche.attente{border-color:var(--attente)}
+.fiche .l1{display:flex;justify-content:space-between;gap:.5rem;font-weight:700;font-size:1.15rem}
+.fiche .age{color:var(--doux);font-weight:500;white-space:nowrap}
+.fiche .nat{font-size:1.05rem;margin:.2rem 0}
+.fiche .l2{color:var(--doux);font-size:.9rem}
+.fiche .etat{color:var(--attente);font-size:.9rem;margin-top:.2rem}
+.compteurs{display:flex;gap:.7rem;padding:.7rem 1.2rem 0}
+.compteur{flex:1;background:var(--carte);border-radius:10px;padding:.5rem .9rem;display:flex;align-items:baseline;gap:.6rem}
+.compteur b{font-size:2.2rem}.compteur span{color:var(--doux)}
+.compteur.rouge b{color:var(--urgent)}.compteur.orange b{color:var(--attente)}
 `;
 
 // Retire les éléments qui débordent d'une liste et affiche « + N autres » : l'écran ne défile jamais.
@@ -173,8 +187,9 @@ function colonnePlanning(titre: string, agendas: AgendaLu[], maintenant: number)
   const demain = trier(agendas.flatMap((a) => a.demain.map((r) => ({ r, a }))));
   const erreurs = agendas.filter((a) => a.erreur).map((a) => `<div class="alerte">${e(a.nom)} : ${e(a.erreur)}</div>`).join('');
   const restants = jour.filter((x) => !x.r.passe).length;
-  // Les rendez-vous passés n'occupent la place que s'il en reste peu à venir.
-  const visibles = restants >= 6 ? jour.filter((x) => !x.r.passe) : jour;
+  // Les rendez-vous passés ne restent affichés que les jours calmes : sinon ils prennent la
+  // place de ce qui arrive (dont demain).
+  const visibles = jour.length <= 5 ? jour : jour.filter((x) => !x.r.passe);
   return `<section><h2>${e(titre)} <small>${restants} à venir</small></h2><div class="liste">${erreurs}${
     visibles.map((x) => ligneRdv(x.r, x.a, plusieurs, maintenant)).join('') || '<div class="vide">Rien aujourd’hui</div>'
   }${demain.length ? `<div class="sep">Demain · ${demain.length}</div>${demain.map((x) => ligneRdv(x.r, x.a, plusieurs, maintenant)).join('')}` : ''}</div></section>`;
@@ -188,36 +203,85 @@ function ligneBon(config: Config, i: Intervention): string {
 <div class="l2">${e(i.nature || i.resume)}</div><div class="l2">${attente ? '⏳ coordonnées attendues · ' : ''}${e(lieu)}${i.client_telephone ? ` · ${e(i.client_telephone)}` : ''}</div></div>`;
 }
 
-async function pageEcran(config: Config): Promise<string> {
-  // Base injoignable : l'écran garde au moins les plannings.
-  let erreurBase = '';
-  const [inters, agendas] = await Promise.all([
-    interventionsOuvertes().catch((err: unknown) => {
-      console.error('[ecran]', err instanceof Error ? err.message : err);
-      erreurBase = 'Bons indisponibles pour le moment';
-      return [] as Intervention[];
-    }),
-    lireAgendas(config),
-  ]);
+/** Taille réglable dans l'adresse (?zoom=1.3) : chaque TV a sa distance de lecture. */
+function zoomDe(url: URL): number {
+  const z = Number(url.searchParams.get('zoom'));
+  return Number.isFinite(z) && z >= 0.5 && z <= 3 ? z : 1;
+}
+
+function pageAffichage(titre: string, sousTitre: string, contenu: string, zoom: number, base: string): string {
+  const corps = `<header><h1>Groupe <span>CYRNEO</span> · ${e(sousTitre)}</h1><div id="h"></div></header>${contenu}<script>${SCRIPT_ECRAN}</script>`;
+  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="60"><title>${e(titre)}</title><style>${STYLE_ECRAN}html{font-size:calc(${base} * ${zoom})}</style></head><body>${corps}</body></html>`;
+}
+
+async function chargerBons(): Promise<{ bons: Intervention[]; erreur: string }> {
+  try {
+    const inters = await interventionsOuvertes();
+    // Rappel : tout ce qui n'est pas encore planifié, urgences d'abord, puis le plus ancien.
+    const bons = inters
+      .filter((i) => i.statut === 'a_planifier' || i.statut === 'coordonnees_demandees')
+      .sort((a, b) => (a.urgence === b.urgence ? a.cree_le.localeCompare(b.cree_le) : a.urgence === 'urgente' ? -1 : 1));
+    return { bons, erreur: '' };
+  } catch (err) {
+    console.error('[ecran]', err instanceof Error ? err.message : err);
+    return { bons: [], erreur: 'Bons indisponibles pour le moment' };
+  }
+}
+
+async function colonnesPlanning(config: Config): Promise<string[]> {
+  const agendas = await lireAgendas(config);
   const maintenant = Date.now();
-  // Rappel : tout ce qui n'est pas encore planifié, urgences d'abord, puis le plus ancien.
-  const bons = inters
-    .filter((i) => i.statut === 'a_planifier' || i.statut === 'coordonnees_demandees')
-    .sort((a, b) => (a.urgence === b.urgence ? a.cree_le.localeCompare(b.cree_le) : a.urgence === 'urgente' ? -1 : 1));
-  const enRetard = bons.filter((i) => maintenant - new Date(i.cree_le).getTime() > 24 * 3_600_000).length;
-  const colonnes = config.ecran.colonnes.map((c) =>
+  return config.ecran.colonnes.map((c) =>
     colonnePlanning(c.titre, c.agendas.map((env) => agendas.find((a) => a.env === env)).filter((a): a is AgendaLu => !!a), maintenant)
   );
-  const corps = `<header><h1>Groupe <span>CYRNEO</span> · Planning</h1><div id="h"></div></header>
-<main style="--cols:${colonnes.length}">${colonnes.join('')}
+}
+
+/** Écran mixte : plannings + bons à traiter (premier format). */
+async function pageEcran(config: Config, url: URL): Promise<string> {
+  const [colonnes, { bons, erreur }] = await Promise.all([colonnesPlanning(config), chargerBons()]);
+  const enRetard = bons.filter((i) => Date.now() - new Date(i.cree_le).getTime() > 24 * 3_600_000).length;
+  const contenu = `<main style="--cols:${colonnes.length}">${colonnes.join('')}
 <section><h2>Bons à traiter <small>${bons.length}${enRetard ? ` · <span id="retards">${enRetard} depuis + 24 h</span>` : ''}</small></h2><div class="liste">${
-    erreurBase ? `<div class="alerte">${e(erreurBase)}</div>` : bons.map((i) => ligneBon(config, i)).join('') || '<div class="vide">Tout est planifié 👍</div>'
-  }</div></section></main><script>${SCRIPT_ECRAN}</script>`;
-  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="60"><title>Planning CYRNEO</title><style>${STYLE_ECRAN}</style></head><body>${corps}</body></html>`;
+    erreur ? `<div class="alerte">${e(erreur)}</div>` : bons.map((i) => ligneBon(config, i)).join('') || '<div class="vide">Tout est planifié 👍</div>'
+  }</div></section></main>`;
+  return pageAffichage('Planning CYRNEO', 'Planning', contenu, zoomDe(url), 'clamp(13px,1.12vw,30px)');
+}
+
+/** Écran des équipes : uniquement les plannings, en grand. */
+async function pageEquipes(config: Config, url: URL): Promise<string> {
+  const colonnes = await colonnesPlanning(config);
+  const contenu = `<main class="equipes" style="--cols:${colonnes.length}">${colonnes.join('')}</main>`;
+  return pageAffichage('Planning équipes', 'Planning des équipes', contenu, zoomDe(url), 'clamp(16px,1.45vw,40px)');
+}
+
+function ficheBon(config: Config, i: Intervention): string {
+  const attente = i.statut === 'coordonnees_demandees';
+  const classe = i.urgence === 'urgente' ? 'urgente' : attente ? 'attente' : '';
+  const lieu = [i.adresse, i.commune].filter(Boolean).join(', ');
+  return `<div class="fiche ${classe}"><div class="l1"><span>${i.urgence === 'urgente' ? '🚨 ' : ''}${e(i.client_nom || 'Client')}</span><span class="age">${depuis(i.cree_le)}</span></div>
+<div class="nat">${e(i.nature || i.resume)}</div>
+${lieu ? `<div class="l2">📍 ${e(lieu)}</div>` : ''}
+<div class="l2">${i.client_telephone ? `📞 ${e(i.client_telephone)} · ` : ''}${e(nomSociete(config, i.societe))} · ${e(i.reference)}${i.dolibarr_ref ? ` · ${e(i.dolibarr_ref)}` : ''}</div>
+${attente ? '<div class="etat">⏳ coordonnées demandées au client</div>' : i.date_souhaitee ? `<div class="etat">📅 souhaité : ${e(i.date_souhaitee)}</div>` : ''}</div>`;
+}
+
+/** Écran du bureau : les interventions à prévoir, en grandes fiches, avec les compteurs. */
+async function pageBureau(config: Config, url: URL): Promise<string> {
+  const { bons, erreur } = await chargerBons();
+  const maintenant = Date.now();
+  const urgentes = bons.filter((i) => i.urgence === 'urgente').length;
+  const attente = bons.filter((i) => i.statut === 'coordonnees_demandees').length;
+  const retard = bons.filter((i) => maintenant - new Date(i.cree_le).getTime() > 24 * 3_600_000).length;
+  const compteur = (n: number, libelle: string, classe = '') => `<div class="compteur ${n && classe ? classe : ''}"><b>${n}</b><span>${libelle}</span></div>`;
+  const contenu = `<div class="compteurs">${compteur(bons.length, 'à prévoir')}${compteur(urgentes, 'urgentes', 'rouge')}${compteur(retard, 'depuis + 24 h', 'rouge')}${compteur(attente, 'attendent le client', 'orange')}</div>
+<main class="bureau"><div class="liste grille">${
+    erreur ? `<div class="alerte">${e(erreur)}</div>` : bons.map((i) => ficheBon(config, i)).join('') || '<div class="vide">Tout est planifié 👍</div>'
+  }</div></main>`;
+  return pageAffichage('Bureau CYRNEO', 'Interventions à prévoir', contenu, zoomDe(url), 'clamp(15px,1.3vw,36px)');
 }
 
 function nav(): string {
-  return '<div class="barre"><h1>Secrétariat CYRNEO</h1><div class="nav"><a href="/ecran">Écran</a><a href="/interventions">Interventions</a><a href="/journal">Journal</a></div></div>';
+  return '<div class="barre"><h1>Secrétariat CYRNEO</h1><div class="nav"><a href="/equipes">Écran équipes</a><a href="/bureau">Écran bureau</a><a href="/interventions">Interventions</a><a href="/journal">Journal</a></div></div>';
 }
 
 async function pageInterventions(config: Config): Promise<string> {
@@ -235,9 +299,17 @@ async function pageInterventions(config: Config): Promise<string> {
 <button>Enregistrer</button></form></td></tr>`;
     })
     .join('');
+  const societes = config.societes.map((x) => `<option value="${e(x.id)}">${e(x.nom)}</option>`).join('');
+  const formulaire = `<details class="carte" style="margin:1.2rem 1.5rem 0"><summary style="cursor:pointer;font-weight:600">➕ Nouvelle demande (appel, passage au bureau…)</summary>
+<form method="post" action="/interventions/nouvelle" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(14rem,1fr));gap:.6rem;margin-top:.8rem">
+<select name="societe">${societes}</select><select name="type"><option value="intervention">Intervention</option><option value="devis">Devis</option></select>
+<select name="urgence"><option value="normale">Normale</option><option value="urgente">Urgente</option></select>
+<input name="client_nom" placeholder="Client *" required><input name="client_telephone" placeholder="Téléphone"><input name="client_email" placeholder="Email">
+<input name="adresse" placeholder="Adresse"><input name="commune" placeholder="Commune"><input name="date_souhaitee" placeholder="Date souhaitée">
+<input name="nature" placeholder="Demande (ex. vidange fosse 3 m³) *" required style="grid-column:1/-1"><button>Créer la demande</button></form></details>`;
   return page(
     'Interventions',
-    `${nav()}<div style="padding:1.2rem 1.5rem" class="carte"><table><tr><th>Réf.</th><th>Société</th><th>Client</th><th>Lieu</th><th>Demande</th><th>Suivi</th></tr>${lignes || '<tr><td colspan="6" class="vide">Rien en cours</td></tr>'}</table></div>`
+    `${nav()}${formulaire}<div style="padding:1.2rem 1.5rem" class="carte"><table><tr><th>Réf.</th><th>Société</th><th>Client</th><th>Lieu</th><th>Demande</th><th>Suivi</th></tr>${lignes || '<tr><td colspan="6" class="vide">Rien en cours</td></tr>'}</table></div>`
   );
 }
 
@@ -294,9 +366,10 @@ export async function gererRequete(req: http.IncomingMessage, res: http.ServerRe
     const autorise = cookie === cle || url.searchParams.get('cle') === cle;
     const entetesCle: Record<string, string> = url.searchParams.get('cle') === cle ? { 'Set-Cookie': `secretariat=${cle}; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000` } : {};
 
-    if (url.pathname === '/' || url.pathname === '/ecran') {
+    const ecrans: Record<string, (c: Config, u: URL) => Promise<string>> = { '/': pageEcran, '/ecran': pageEcran, '/equipes': pageEquipes, '/bureau': pageBureau };
+    if (ecrans[url.pathname]) {
       if (!config.serveur.ecranPublic && !autorise) return envoyer(401, pageCle(url));
-      return envoyer(200, await pageEcran(config), entetesCle);
+      return envoyer(200, await ecrans[url.pathname](config, url), entetesCle);
     }
     if (url.pathname === '/etat') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -306,6 +379,28 @@ export async function gererRequete(req: http.IncomingMessage, res: http.ServerRe
     if (!autorise) return envoyer(401, pageCle(url));
 
     if (url.pathname === '/interventions' && req.method === 'GET') return envoyer(200, await pageInterventions(config), entetesCle);
+    if (url.pathname === '/interventions/nouvelle' && req.method === 'POST') {
+      const f = await lireCorps(req);
+      const champ = (n: string) => (f.get(n) ?? '').trim().slice(0, 300);
+      const societe = config.societes.some((x) => x.id === champ('societe')) ? champ('societe') : config.societes[0].id;
+      if (!champ('client_nom') || !champ('nature')) return envoyer(400, page('Erreur', '<p style="padding:2rem">Client et demande sont obligatoires.</p>'));
+      const d: NouvelleDemande = {
+        type: champ('type') === 'devis' ? 'devis' : 'intervention',
+        societe,
+        urgence: champ('urgence') === 'urgente' ? 'urgente' : 'normale',
+        client_nom: champ('client_nom'),
+        client_telephone: champ('client_telephone'),
+        client_email: champ('client_email'),
+        adresse: champ('adresse'),
+        commune: champ('commune'),
+        nature: champ('nature'),
+        date_souhaitee: champ('date_souhaitee'),
+      };
+      await creerInterventionManuelle(d);
+      res.writeHead(303, { Location: '/interventions' });
+      res.end();
+      return;
+    }
     const m = /^\/interventions\/(\d+)$/.exec(url.pathname);
     if (m && req.method === 'POST') {
       const f = await lireCorps(req);

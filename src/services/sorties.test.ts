@@ -27,6 +27,7 @@ vi.mock('./stockage', () => ({
   journalEntre: async () => [journal],
   chercherJournal: async () => [journal],
   majIntervention: vi.fn(async () => inter),
+  creerInterventionManuelle: vi.fn(async () => inter),
 }));
 
 const config = validerConfig({ ...exemple, agendas: [], ecran: { colonnes: [] } });
@@ -50,6 +51,23 @@ describe('écran et pages locales', () => {
     expect(j.status).toBe(200);
     expect(await j.text()).toContain('Facture reçue');
     expect((await fetch(`${base}/interventions?cle=cle-test`)).status).toBe(200);
+    const equipes = await (await fetch(`${base}/equipes?zoom=1.4`)).text();
+    expect(equipes).toContain('Planning des équipes');
+    expect(equipes).toContain('calc(clamp(16px,1.45vw,40px) * 1.4)');
+    expect(equipes).not.toContain('Bons à traiter');
+    const bureau = await (await fetch(`${base}/bureau`)).text();
+    expect(bureau).toContain('Interventions à prévoir');
+    expect(bureau).toContain('Jean &lt;Martin&gt;');
+    expect(bureau).toContain('à prévoir');
+    const nouvelle = await fetch(`${base}/interventions/nouvelle?cle=cle-test`, {
+      method: 'POST',
+      body: 'societe=sud-assainissement&type=intervention&urgence=urgente&client_nom=Mme+Santoni&client_telephone=0611223344&nature=Vidange+fosse',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      redirect: 'manual',
+    });
+    expect(nouvelle.status).toBe(303);
+    const { creerInterventionManuelle } = await import('./stockage');
+    expect(creerInterventionManuelle).toHaveBeenCalledWith(expect.objectContaining({ client_nom: 'Mme Santoni', urgence: 'urgente', societe: 'sud-assainissement' }));
     const post = await fetch(`${base}/interventions/1?cle=cle-test`, { method: 'POST', body: 'statut=planifiee&date_prevue=2026-10-23T09:00&intervenant=Paul', headers: { 'content-type': 'application/x-www-form-urlencoded' }, redirect: 'manual' });
     expect(post.status).toBe(303);
     serveur.close();

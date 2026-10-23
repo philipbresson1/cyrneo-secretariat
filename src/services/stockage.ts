@@ -150,6 +150,34 @@ export async function creerIntervention(
   return { ...cree, reference };
 }
 
+export type NouvelleDemande = {
+  type: 'intervention' | 'devis';
+  societe: string;
+  urgence: 'urgente' | 'normale';
+  client_nom: string;
+  client_telephone: string;
+  client_email: string;
+  adresse: string;
+  commune: string;
+  nature: string;
+  date_souhaitee: string;
+};
+
+/** Demande saisie à la main au bureau : pas de mail d'origine, statut « à planifier ». */
+export async function creerInterventionManuelle(d: NouvelleDemande): Promise<Intervention> {
+  const cree = verifier(
+    await sb
+      .from('interventions')
+      .insert({ ...d, statut: 'a_planifier', resume: d.nature, boite: 'saisie-bureau', mail_message_id: `saisie-${Date.now()}` })
+      .select('*')
+      .single(),
+    'Création manuelle'
+  ) as Intervention;
+  const reference = referenceIntervention(cree.id, d.type, new Date().getFullYear());
+  verifier(await sb.from('interventions').update({ reference }).eq('id', cree.id), 'Référence intervention');
+  return { ...cree, reference };
+}
+
 export async function majIntervention(id: number, champs: Partial<Omit<Intervention, 'id'>>): Promise<Intervention> {
   return verifier(
     await sb.from('interventions').update({ ...champs, maj_le: new Date().toISOString() }).eq('id', id).select('*').single(),
