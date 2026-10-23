@@ -161,7 +161,7 @@ describe('décision', () => {
     const cfg = { ...config, transferts: [{ categories: ['facture_recue' as const], societes: '*' as const, vers: ['Compta@exemple.fr'] }] };
     const m = mail({ piecesJointes: [{ nom: 'f.pdf', type: 'application/pdf', taille: 10, contenu: Buffer.from('') }] });
     const actions = decider(m, classification({ categorie: 'facture_recue' }), ctx({ config: cfg }));
-    expect(actions).toEqual([{ type: 'classer_pieces_jointes', dossier: 'factures' }, { type: 'transferer', vers: ['compta@exemple.fr'] }]);
+    expect(actions).toEqual([{ type: 'classer_pieces_jointes', dossier: 'factures' }, { type: 'facture_dolibarr' }, { type: 'transferer', vers: ['compta@exemple.fr'] }]);
   });
 
   it('Dolibarr actif : bon créé seulement quand on peut joindre le client', () => {

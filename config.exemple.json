@@ -128,7 +128,7 @@
     "rapports": "C:/Cyrneo/Rapports secretariat",
     "vehicules": "C:/Cyrneo/Entretien vehicules"
   },
-  "bulles": { "vehicules": "Entretien vehicules cyrneo" },
+  "bulles": { "vehicules": "Entretien vehicules cyrneo", "admin": "Admin" },
   "rapport": {
     "heure": "19:00",
     "destinataires": []

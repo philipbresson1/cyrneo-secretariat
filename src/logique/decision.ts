@@ -102,6 +102,8 @@ export function decider(mail: MailRecu, c: Classification, ctx: Contexte): Actio
       break;
     case 'facture_recue':
       if (mail.piecesJointes.length > 0) actions.push({ type: 'classer_pieces_jointes', dossier: 'factures' });
+      // Saisie dans Dolibarr (écrite en mode réel seulement), compte rendu dans la bulle admin.
+      if (mail.piecesJointes.some((p) => p.type === 'application/pdf' || /\.pdf$/i.test(p.nom)) && ctx.config.dolibarr.url) actions.push({ type: 'facture_dolibarr' });
       break;
     case 'entretien_vehicule':
       if (mail.piecesJointes.length > 0) actions.push({ type: 'classer_pieces_jointes', dossier: 'vehicules' });

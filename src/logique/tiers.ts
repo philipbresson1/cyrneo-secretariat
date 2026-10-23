@@ -11,6 +11,9 @@ export type Tiers = {
   nom: string;
   alias: string;
   code_client: string;
+  code_fournisseur: string;
+  siret: string;
+  tva_intra: string;
   adresse: string;
   cp: string;
   ville: string;

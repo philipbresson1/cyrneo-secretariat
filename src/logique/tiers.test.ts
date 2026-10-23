@@ -3,7 +3,7 @@ import { blocRainbow } from '../services/tiers';
 import { candidats, estSyndic, evident, indexer, syndicExpediteur, type Tiers } from './tiers';
 
 const t = (id: number, nom: string, plus: Partial<Tiers> = {}): Tiers => ({
-  id, nom, alias: '', code_client: `CU${id}`, adresse: '', cp: '', ville: '', telephone: '', email: '', parent_id: null,
+  id, nom, alias: '', code_client: `CU${id}`, code_fournisseur: '', siret: '', tva_intra: '', adresse: '', cp: '', ville: '', telephone: '', email: '', parent_id: null,
   client: 1, fournisseur: 0, actif: true, note_publique: '', note_privee: '', ...plus,
 });
 

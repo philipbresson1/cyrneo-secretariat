@@ -88,7 +88,7 @@ export type Config = {
   agendas: Agenda[];
   dossiers: { factures: string; rapports: string; vehicules: string };
   /** Bulles communes au groupe. */
-  bulles: { vehicules: string };
+  bulles: { vehicules: string; admin?: string }; // admin : factures et administratif, jamais les bulles d'inter
   rapport: { heure: string; destinataires: string[] };
   /** Rappel de rendez-vous envoyé aux clients la veille, d'après les plannings. */
   rappels: { actif: boolean; heure: string; boite: string };
@@ -185,6 +185,7 @@ export type Action =
   | { type: 'repondre'; modele: 'accuse_intervention' | 'accuse_devis' | 'demande_coordonnees'; manquants: string[] }
   | { type: 'classer_pieces_jointes'; dossier: 'factures' | 'vehicules' }
   | { type: 'transferer'; vers: string[] }
-  | { type: 'bon_dolibarr' };
+  | { type: 'bon_dolibarr' }
+  | { type: 'facture_dolibarr' };
 
 export type ActionExecutee = { action: Action['type']; detail: string; ok: boolean; simulee: boolean };

@@ -145,3 +145,8 @@ alter table interventions add column dolibarr_id bigint;
 alter table interventions add column dolibarr_entite int;
 create index idx_interventions_dolibarr on interventions (dolibarr_entite, dolibarr_id);
 alter table interventions add constraint interventions_source_check check (source in ('mail', 'bureau', 'dolibarr', 'rainbow'));
+
+-- Identifiants des tiers (rapprochement des fournisseurs sur les factures reçues).
+alter table dolibarr_tiers add column siret text not null default '';
+alter table dolibarr_tiers add column tva_intra text not null default '';
+alter table dolibarr_tiers add column code_fournisseur text not null default '';

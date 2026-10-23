@@ -34,7 +34,7 @@ vi.mock('./tiers', async () => ({
   indexTiers: vi.fn(async () => index.courant),
 }));
 beforeEach(() => {
-  index.courant = indexer([{ id: 5, nom: 'Résidence Les Pins', alias: '', code_client: 'CU5', adresse: 'Route des Sanguinaires', cp: '20000', ville: 'Ajaccio', telephone: '04 95 00 00 00', email: '', parent_id: null, client: 1, fournisseur: 0, actif: true, note_publique: '', note_privee: '' }], []);
+  index.courant = indexer([{ id: 5, nom: 'Résidence Les Pins', alias: '', code_client: 'CU5', code_fournisseur: '', siret: '', tva_intra: '', adresse: 'Route des Sanguinaires', cp: '20000', ville: 'Ajaccio', telephone: '04 95 00 00 00', email: '', parent_id: null, client: 1, fournisseur: 0, actif: true, note_publique: '', note_privee: '' }], []);
 });
 
 import { numeroBon, releverBonsDolibarr, societeDeLaBulle, traiterMessageBulle } from './appels';

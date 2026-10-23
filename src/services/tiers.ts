@@ -51,6 +51,12 @@ export async function synchroniserTiers(config: Config): Promise<string> {
   return bilan;
 }
 
+/** Tiers que l'on vient de créer dans Dolibarr : ajouté à la copie sans attendre la synchro. */
+export async function ajouterTiersLocal(t: Tiers): Promise<void> {
+  verifier(await sb().from('dolibarr_tiers').upsert({ ...t, vu_le: new Date().toISOString() }), 'Ajout tiers');
+  index = null;
+}
+
 async function toutLire<T>(table: string, colonnes: string): Promise<T[]> {
   const tout: T[] = [];
   for (let de = 0; ; de += 1000) {
@@ -66,7 +72,7 @@ let chargeLe = 0;
 /** Copie en mémoire, relue toutes les 6 heures (ou après une synchro). */
 export async function indexTiers(): Promise<IndexTiers> {
   if (!index || Date.now() - chargeLe > 6 * 3_600_000) {
-    const tiers = await toutLire<Tiers>('dolibarr_tiers', 'id,nom,alias,code_client,adresse,cp,ville,telephone,email,parent_id,client,fournisseur,actif,note_publique,note_privee');
+    const tiers = await toutLire<Tiers>('dolibarr_tiers', 'id,nom,alias,code_client,code_fournisseur,siret,tva_intra,adresse,cp,ville,telephone,email,parent_id,client,fournisseur,actif,note_publique,note_privee');
     const contacts = await toutLire<ContactTiers>('dolibarr_contacts', 'id,tiers_id,nom,email,telephone,poste');
     index = indexer(tiers, contacts);
     chargeLe = Date.now();

@@ -11,6 +11,7 @@
  */
 import type { Classification, Config } from '../logique/types';
 import type { ContactTiers, Tiers } from '../logique/tiers';
+import type { FactureLue, FournisseurLu } from '../logique/facture';
 
 export type BonDolibarr = { id: number; ref: string };
 
@@ -130,6 +131,9 @@ export async function lireTiersEtContacts(config: Config): Promise<{ tiers: Tier
         nom: texte(t.name ?? t.nom),
         alias: texte(t.name_alias),
         code_client: texte(t.code_client),
+        code_fournisseur: texte(t.code_fournisseur),
+        siret: texte(t.idprof2).replace(/\s/g, ''),
+        tva_intra: texte(t.tva_intra).replace(/\s/g, '').toUpperCase(),
         adresse: texte(t.address),
         cp: texte(t.zip),
         ville: texte(t.town),
@@ -220,4 +224,87 @@ export async function creerBonIntervention(config: Config, entite: number, socid
   });
   const bon = await appel<{ id: number | string; ref?: string }>(config, entite, 'GET', `/interventions/${id}`);
   return { id: Number(id), ref: bon.ref ?? `#${id}` };
+}
+
+/** Crée un fournisseur (seule création de tiers autorisée : demandée pour les factures). */
+export async function creerFournisseur(config: Config, entite: number, f: FournisseurLu): Promise<number> {
+  const id = await appel<number>(config, entite, 'POST', '/thirdparties', {
+    name: f.nom,
+    client: 0,
+    fournisseur: 1,
+    code_fournisseur: 'auto',
+    address: f.adresse || undefined,
+    zip: f.cp || undefined,
+    town: f.ville || undefined,
+    email: f.email || undefined,
+    phone: f.telephone || undefined,
+    idprof2: f.siret.replace(/\s/g, '') || undefined,
+    idprof1: f.siret.replace(/\D/g, '').slice(0, 9) || undefined,
+    tva_intra: f.tvaIntra.replace(/\s/g, '') || undefined,
+    country_code: 'FR',
+    note_private: 'Créé automatiquement par le secrétariat CYRNEO à partir d’une facture reçue par mail.',
+  });
+  return Number(id);
+}
+
+/** Facture de ce fournisseur avec ce numéro déjà saisie ? (évite les doublons) */
+export async function factureFournisseurExiste(config: Config, entite: number, socid: number, numero: string): Promise<string | null> {
+  const ref = numero.replace(/'/g, ' ');
+  try {
+    const liste = await appel<{ ref?: string }[]>(
+      config,
+      entite,
+      'GET',
+      `/supplierinvoices?limit=1&sqlfilters=${encodeURIComponent(`(t.ref_supplier:=:'${ref}') and (t.fk_soc:=:${socid})`)}`
+    );
+    return liste?.[0] ? (liste[0].ref ?? numero) : null;
+  } catch (e) {
+    if (e instanceof ErreurDolibarr && e.statut === 404) return null;
+    throw e;
+  }
+}
+
+const horodatage = (jour: string) => Math.floor(new Date(`${jour}T12:00:00Z`).getTime() / 1000);
+
+/** Facture fournisseur en brouillon (une ligne par taux de TVA), PDF joint. */
+export async function creerFactureFournisseur(
+  config: Config,
+  entite: number,
+  socid: number,
+  f: FactureLue,
+  pdf: { nom: string; contenu: Buffer }
+): Promise<{ id: number; ref: string }> {
+  const id = Number(
+    await appel<number>(config, entite, 'POST', '/supplierinvoices', {
+      socid,
+      ref_supplier: f.numero,
+      type: f.avoir ? 2 : 0,
+      date: horodatage(f.date),
+      ...(f.echeance && /^\d{4}-\d{2}-\d{2}$/.test(f.echeance) ? { date_echeance: horodatage(f.echeance) } : {}),
+      label: f.libelle.slice(0, 255),
+      note_private: 'Saisie automatique du secrétariat CYRNEO depuis le PDF reçu par mail : à vérifier avant validation.',
+    })
+  );
+  for (const v of f.ventilation) {
+    await appel(config, entite, 'POST', `/supplierinvoices/${id}/lines`, {
+      description: f.libelle || `Facture ${f.numero}`,
+      pu_ht: v.ht,
+      qty: 1,
+      tva_tx: v.taux,
+      product_type: 1,
+    });
+  }
+  const facture = await appel<{ ref?: string }>(config, entite, 'GET', `/supplierinvoices/${id}`);
+  const ref = facture.ref ?? `(PROV${id})`;
+  await appel(config, entite, 'POST', '/documents/upload', {
+    filename: pdf.nom.replace(/[^\w.\- ]/g, '_'),
+    modulepart: 'supplier_invoice',
+    ref,
+    subdir: '',
+    filecontent: pdf.contenu.toString('base64'),
+    fileencoding: 'base64',
+    overwriteifexists: 0,
+    createdirifnotexists: 1,
+  });
+  return { id, ref };
 }

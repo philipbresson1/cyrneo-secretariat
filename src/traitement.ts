@@ -23,6 +23,7 @@ import { publier } from './services/rainbow';
 import { classerPiecesJointes } from './services/fichiers';
 import { creerBonIntervention, entiteDe } from './services/dolibarr';
 import { blocRainbow, reconnaitreTiers, type TiersReconnu } from './services/tiers';
+import { saisirFactures } from './services/factures';
 import * as db from './services/stockage';
 
 export type Bilan = { statut: 'traite' | 'rien_a_faire' | 'simulation' | 'erreur'; resume: string };
@@ -242,6 +243,16 @@ export async function traiterMail(mail: MailRecu, boite: Boite, config: Config):
           return `${bon.ref} (brouillon) pour ${r.tiers.nom}`;
         });
         if (config.mode === 'reel' && !intervention?.dolibarr_ref) bonAFaire ??= 'Dolibarr a refusé la création (voir le journal)';
+        break;
+      }
+      case 'facture_dolibarr': {
+        const bulle = config.mode === 'test' ? config.test.bulleRainbow : config.bulles.admin;
+        await executer('facture_dolibarr', simulation, 'factures fournisseurs', async () => {
+          const lignes = await saisirFactures(config, mail);
+          if (lignes.length === 0) return 'aucune facture fournisseur dans les PDF';
+          if (bulle) await publier(bulle, [`📥 ${mail.deNom || mail.deAdresse} · ${mail.sujet}`, ...lignes].join('\n'));
+          return lignes.map((l) => l.split('\n')[0]).join(' | ');
+        });
         break;
       }
       case 'transferer': {
