@@ -22,7 +22,10 @@ function verifier<T>(r: { data: T; error: { message: string } | null }, quoi: st
 /** Vérifie que la base répond et que la clé donne accès aux tables. */
 export async function testerBase(): Promise<number> {
   const r = await sb.from('secretariat_journal').select('id', { count: 'exact', head: true });
-  if (r.error) throw new Error(r.error.message || 'base injoignable');
+  if (r.error) {
+    if (r.status === 401 || /api key|jwt/i.test(r.error.message)) throw new Error('clé SUPABASE_SERVICE_ROLE refusée (clé incomplète ou d’un autre projet ?)');
+    throw new Error(r.error.message || `base injoignable (HTTP ${r.status})`);
+  }
   return r.count ?? 0;
 }
 
