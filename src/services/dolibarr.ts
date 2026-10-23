@@ -183,6 +183,18 @@ export async function lireBonsRecents(config: Config, entite: number, nombre = 1
   }));
 }
 
+/** Bon d'intervention par sa référence (ex. FI2610-0012), ou null. */
+export async function bonParRef(config: Config, entite: number, ref: string): Promise<BonLu | null> {
+  try {
+    const liste = await appel<Record<string, unknown>[]>(config, entite, 'GET', `/interventions?limit=1&sqlfilters=${encodeURIComponent(`(t.ref:=:'${ref.replace(/[^\w-]/g, '')}')`)}`);
+    const b = liste?.[0];
+    return b ? { id: Number(b.id), ref: texte(b.ref), socid: Number(b.socid) || 0, description: texte(b.description), statut: Number(b.statut ?? b.fk_statut ?? b.status) || 0, creeLe: new Date(Number(b.datec ?? 0) * 1000), refClient: texte(b.ref_client) } : null;
+  } catch (e) {
+    if (e instanceof ErreurDolibarr && e.statut === 404) return null;
+    throw e;
+  }
+}
+
 /** Texte du bon : ce qu'un technicien doit savoir en ouvrant la fiche. */
 export function descriptionBon(c: Classification, reference: string): string {
   const lignes = [

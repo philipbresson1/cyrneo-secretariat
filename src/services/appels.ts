@@ -3,13 +3,16 @@
  * dans une bulle Rainbow. Le secrétariat fait l'aller-retour pour que la liste des
  * interventions reste complète :
  *   - bon saisi dans Dolibarr → fiche créée, annoncée dans la bulle de la société ;
- *   - demande écrite dans une bulle → fiche créée, bon Dolibarr (mode réel), réponse dans la bulle.
- * Un même appel noté des deux côtés est rapproché (même tiers ou même téléphone, 3 jours).
+ *   - post-it écrit dans une bulle → fiche créée, tiers reconnu, réponse dans la bulle ; quand
+ *     le post est modifié pour y ajouter le n° du BI (habitude du bureau), la fiche est liée au bon.
+ * Le bureau crée lui-même le BI : rien n'est créé dans Dolibarr à partir d'un post. Un bon
+ * n'est relevé qu'au bout de 30 minutes, le temps que son numéro soit ajouté au post ; sinon
+ * il est rapproché par tiers ou téléphone (3 jours), ou créé comme fiche à part.
  */
 import type { Classification, Config, Intervention, MailRecu, Societe } from '../logique/types';
 import { choisirBulle } from '../logique/decision';
 import { classer } from './classifieur';
-import { creerBonIntervention, entiteDe, lireBonsRecents, type BonLu } from './dolibarr';
+import { bonParRef, entiteDe, lireBonsRecents, type BonLu } from './dolibarr';
 import { memeBulle, publier, type MessageBulle } from './rainbow';
 import * as db from './stockage';
 import { blocRainbow, indexTiers, reconnaitreTiers, type TiersReconnu } from './tiers';
@@ -30,7 +33,11 @@ function premiereLigne(texte: string): string {
 }
 
 async function importerBon(config: Config, s: Societe, entite: number, b: BonLu, annoncer: boolean, log: Journal): Promise<void> {
-  if (await db.interventionDuBon(entite, b.id, b.ref, b.refClient)) return;
+  const liee = await db.interventionDuBon(entite, b.id, b.ref, b.refClient);
+  if (liee) {
+    if (!liee.dolibarr_id) await db.majIntervention(liee.id, { dolibarr_id: b.id, dolibarr_entite: entite, dolibarr_ref: b.ref, dolibarr_tiers_id: liee.dolibarr_tiers_id ?? (b.socid || null) });
+    return;
+  }
   const idx = await indexTiers();
   const t = idx.tiers.get(b.socid) ?? null;
   const champsBon = { dolibarr_id: b.id, dolibarr_entite: entite, dolibarr_ref: b.ref, dolibarr_tiers_id: t?.id ?? null };
@@ -71,6 +78,8 @@ async function importerBon(config: Config, s: Societe, entite: number, b: BonLu,
   );
 }
 
+const DELAI_BON = 30 * 60_000;
+
 /** Relève les nouveaux bons de chaque société. Au tout premier passage, reprend sans les
  *  annoncer les bons ouverts des 14 derniers jours, puis ne suit que les nouveaux. */
 export async function releverBonsDolibarr(config: Config, log: Journal): Promise<void> {
@@ -81,17 +90,25 @@ export async function releverBonsDolibarr(config: Config, log: Journal): Promise
     const dernier = await db.lireSynchro(curseur);
     const bons = await lireBonsRecents(config, entite);
     const premier = dernier === null;
-    const aImporter = premier
-      ? bons.filter((b) => !termine(b) && Date.now() - b.creeLe.getTime() < 14 * 86_400_000)
-      : bons.filter((b) => b.id > Number(dernier));
-    for (const b of aImporter.sort((x, y) => x.id - y.id)) {
-      try {
-        await importerBon(config, s, entite, b, !premier, log);
-      } catch (e) {
-        log(`⚠️ Bon Dolibarr ${b.ref} : ${e instanceof Error ? e.message : String(e)}`);
+    let fait = Number(dernier ?? 0);
+    if (premier) {
+      for (const b of bons.filter((x) => !termine(x) && Date.now() - x.creeLe.getTime() < 14 * 86_400_000)) {
+        await importerBon(config, s, entite, b, false, log).catch((e) => log(`⚠️ Bon Dolibarr ${b.ref} : ${e instanceof Error ? e.message : String(e)}`));
+      }
+      fait = Math.max(0, ...bons.map((b) => b.id));
+    } else {
+      for (const b of bons.filter((x) => x.id > fait).sort((x, y) => x.id - y.id)) {
+        // Laisse au bureau le temps d'ajouter le n° du BI à son post Rainbow.
+        if (Date.now() - b.creeLe.getTime() < DELAI_BON) break;
+        try {
+          await importerBon(config, s, entite, b, true, log);
+        } catch (e) {
+          log(`⚠️ Bon Dolibarr ${b.ref} : ${e instanceof Error ? e.message : String(e)}`);
+        }
+        fait = b.id;
       }
     }
-    if (bons.length > 0) await db.ecrireSynchro(curseur, String(Math.max(Number(dernier ?? 0), ...bons.map((b) => b.id))));
+    if (fait > Number(dernier ?? 0)) await db.ecrireSynchro(curseur, String(fait));
 
     // Bons clôturés ou facturés dans Dolibarr : la fiche passe en réalisée.
     for (const fiche of await db.interventionsAvecBon(entite, bons.filter(termine).map((b) => b.id))) {
@@ -110,12 +127,44 @@ export function societeDeLaBulle(config: Config, bulle: string): Societe | 'test
   return config.societes.find((s) => [s.bulleRainbow, s.bulleUrgence, s.bulleInspection].some((b) => b && memeBulle(b, bulle))) ?? null;
 }
 
-/** Message d'une bulle : nouvelle demande prise au téléphone ? Si oui, fiche + bon + réponse. */
+/** Numéro de BI écrit dans un post (numérotation Dolibarr : FI2610-0012). */
+export function numeroBon(texte: string): string | null {
+  const m = texte.match(/\b(?:FI|BI)\s?-?(\d{4})-(\d{3,5})\b/i);
+  return m ? `FI${m[1]}-${m[2]}` : null;
+}
+
+/** Lie la fiche au bon dont le numéro a été écrit dans le post. */
+async function lierBon(config: Config, fiche: Intervention, ref: string, log: Journal): Promise<void> {
+  if (fiche.dolibarr_ref === ref) return;
+  let lien: Partial<Intervention> = { dolibarr_ref: ref };
+  if (config.dolibarr.url && process.env.DOLIBARR_API_KEY) {
+    const entites = [entiteDe(config, fiche.societe), ...new Set(Object.values(config.dolibarr.entites))];
+    for (const entite of new Set(entites)) {
+      const b = await bonParRef(config, entite, ref);
+      if (b) {
+        lien = { dolibarr_ref: b.ref, dolibarr_id: b.id, dolibarr_entite: entite, dolibarr_tiers_id: fiche.dolibarr_tiers_id ?? (b.socid || null) };
+        break;
+      }
+    }
+  }
+  await db.majIntervention(fiche.id, lien);
+  log(`${fiche.reference} liée au bon ${ref}`);
+}
+
+/** Post d'une bulle. Nouvelle demande prise au téléphone : fiche + tiers + réponse. Post
+ *  modifié avec le n° du BI : fiche liée au bon. */
 export async function traiterMessageBulle(config: Config, m: MessageBulle, log: Journal): Promise<void> {
   const cible = societeDeLaBulle(config, m.bulle);
-  if (!cible || m.texte.length < 25) return;
-  const cle = `rainbow:${m.id}`;
-  if (await db.interventionParCle(cle)) return;
+  if (!cible) return;
+  // Un post modifié garde la clé du post d'origine.
+  const cle = `rainbow:${m.remplace ?? m.id}`;
+  const bonEcrit = numeroBon(m.texte);
+  const existante = await db.interventionParCle(cle);
+  if (existante) {
+    if (bonEcrit) await lierBon(config, existante, bonEcrit, log);
+    return;
+  }
+  if (m.texte.length < 25) return;
 
   const pseudo: MailRecu = {
     boite: 'rainbow',
@@ -126,15 +175,16 @@ export async function traiterMessageBulle(config: Config, m: MessageBulle, log: 
     deAdresse: '',
     deNom: m.auteur,
     repondreA: '',
-    sujet: `Message Rainbow (${m.bulle})`,
+    sujet: `Post Rainbow (${m.bulle})`,
     recuLe: new Date(),
     texte: m.texte,
     entetes: { autoSubmitted: null, precedence: null, listId: null, autoResponseSuppress: null },
     piecesJointes: [],
   } as MailRecu;
   const contexte =
-    `Ce n'est pas un mail : c'est un message écrit par ${m.auteur || 'un membre de l’équipe'} dans la bulle Rainbow « ${m.bulle} » de l'équipe. ` +
+    `Ce n'est pas un mail : c'est un post-it écrit par ${m.auteur || 'un membre de l’équipe'} dans la bulle Rainbow « ${m.bulle} » de l'équipe. ` +
     "S'il note une nouvelle demande d'un client (prise au téléphone ou sur place), catégorie demande_intervention ou demande_devis, avec les coordonnées du client. " +
+    "Un numéro de bon d'intervention (FI…) peut y figurer : ce n'est pas une coordonnée. " +
     "Toute autre chose (discussion, planning, suivi ou compte rendu d'une intervention déjà connue, question à un collègue) : catégorie autre.";
   const c: Classification = await classer(pseudo, config, contexte);
   if (c.categorie !== 'demande_intervention' && c.categorie !== 'demande_devis') return;
@@ -145,11 +195,12 @@ export async function traiterMessageBulle(config: Config, m: MessageBulle, log: 
 
   const deja = await db.interventionRecenteSemblable(tiersId, c.contact.telephone);
   if (deja) {
+    if (bonEcrit) await lierBon(config, deja, bonEcrit, log);
     if (config.mode !== 'simulation') await publier(m.bulle, `ℹ️ Déjà enregistrée : ${deja.reference} (${deja.nature || deja.resume})`);
     return;
   }
 
-  let fiche: Intervention = await db.creerInterventionTelephone({
+  const fiche: Intervention = await db.creerInterventionTelephone({
     source: 'rainbow',
     cle,
     type: c.categorie === 'demande_devis' ? 'devis' : 'intervention',
@@ -162,31 +213,15 @@ export async function traiterMessageBulle(config: Config, m: MessageBulle, log: 
     commune: c.contact.commune || r?.tiers?.ville || '',
     nature: c.nature,
     date_souhaitee: c.dateSouhaitee,
-    resume: `${c.resume} (noté par ${m.auteur || 'l’équipe'} dans Rainbow)`,
+    resume: `${c.resume} (post de ${m.auteur || 'l’équipe'} dans Rainbow)`,
     dolibarr_tiers_id: tiersId,
   });
-  log(`Demande notée dans « ${m.bulle} » → ${fiche.reference}`);
+  log(`Post dans « ${m.bulle} » → ${fiche.reference}`);
+  if (bonEcrit) await lierBon(config, fiche, bonEcrit, log);
 
-  let ligneBon = '';
-  if (fiche.type === 'intervention') {
-    if (config.mode !== 'reel' || !config.dolibarr.actif) ligneBon = config.mode === 'reel' ? '' : '(mode test : pas de bon Dolibarr)';
-    else if (!r?.tiers) ligneBon = '⚠️ Bon à faire dans Dolibarr (tiers non reconnu avec certitude)';
-    else {
-      try {
-        const entite = entiteDe(config, s.id);
-        const bon = await creerBonIntervention(config, entite, r.tiers.id, c, fiche.reference);
-        fiche = await db.majIntervention(fiche.id, { dolibarr_id: bon.id, dolibarr_entite: entite, dolibarr_ref: bon.ref });
-        ligneBon = `Bon ${bon.ref} créé en brouillon dans Dolibarr`;
-      } catch (e) {
-        ligneBon = `⚠️ Bon Dolibarr non créé : ${e instanceof Error ? e.message : String(e)}`;
-      }
-    }
-  }
   if (config.mode === 'simulation') return;
   await publier(
     m.bulle,
-    [`✅ Enregistrée : ${fiche.reference} · ${s.nom}`, `🔧 ${fiche.nature}${fiche.urgence === 'urgente' ? ' · URGENT' : ''}`, r && r.index.tiers.size > 0 ? blocRainbow(r) : '', ligneBon]
-      .filter(Boolean)
-      .join('\n')
+    [`✅ ${fiche.reference} · ${s.nom}${bonEcrit ? ` · bon ${bonEcrit}` : ''}`, r && r.index.tiers.size > 0 ? blocRainbow(r) : ''].filter(Boolean).join('\n')
   );
 }

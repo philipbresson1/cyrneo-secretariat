@@ -18,9 +18,10 @@ type SdkRainbow = {
 };
 
 /** Message écrit par une personne dans une bulle. */
-export type MessageBulle = { id: string; bulle: string; auteur: string; texte: string };
+/** remplace : id du message d'origine quand c'est une modification (ex. n° de BI ajouté). */
+export type MessageBulle = { id: string; bulle: string; auteur: string; texte: string; remplace?: string };
 
-type MessageSdk = { id?: string; type?: string; content?: string; fromJid?: string; fromBubbleJid?: string; from?: { displayName?: string } };
+type MessageSdk = { id?: string; type?: string; content?: string; fromJid?: string; fromBubbleJid?: string; from?: { displayName?: string }; originalMessageReplaced?: { id?: string } | null };
 
 let ecouteur: ((m: MessageBulle) => void) | null = null;
 
@@ -61,7 +62,7 @@ async function demarrer(): Promise<SdkRainbow> {
     if (m.fromJid && m.fromJid === instance.connectedUser?.jid_im) return; // nos propres messages
     const bulle = instance.bubbles.getAll().find((b) => b.jid === m.fromBubbleJid);
     if (!bulle) return;
-    ecouteur({ id: m.id ?? `${m.fromBubbleJid}-${Date.now()}`, bulle: bulle.name, auteur: m.from?.displayName ?? '', texte: m.content.trim() });
+    ecouteur({ id: m.id ?? `${m.fromBubbleJid}-${Date.now()}`, bulle: bulle.name, auteur: m.from?.displayName ?? '', texte: m.content.trim(), remplace: m.originalMessageReplaced?.id || undefined });
   });
   instance.events.on('rainbow_onerror', () => {
     console.error('[rainbow] erreur de connexion, reconnexion au prochain message');
