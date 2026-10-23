@@ -71,30 +71,63 @@ async function lireAgendas(config: Config): Promise<AgendaLu[]> {
 }
 
 // --- Pages ----------------------------------------------------------------------
+/** Pages de travail (Historique, Journal, accès) : même habillage que les écrans, mais la page
+ *  défile (listes longues, formulaires). */
 const STYLE = `
-:root{--fond:#0f172a;--carte:#1e293b;--texte:#f1f5f9;--doux:#94a3b8;--ligne:#334155;--urgent:#ef4444;--ok:#22c55e;--attente:#f59e0b}
-*{box-sizing:border-box}body{margin:0;background:var(--fond);color:var(--texte);font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
-a{color:#93c5fd}h1{margin:0;font-size:1.6rem}h2{font-size:1.1rem;margin:0 0 .6rem;color:var(--doux);text-transform:uppercase;letter-spacing:.05em}
-.barre{display:flex;justify-content:space-between;align-items:center;padding:1rem 1.5rem;border-bottom:1px solid var(--ligne)}
-.horloge{font-size:2rem;font-variant-numeric:tabular-nums}
-.grille{display:grid;grid-template-columns:2fr 1fr;gap:1.2rem;padding:1.2rem 1.5rem}
-@media (max-width:900px){.grille{grid-template-columns:1fr}}
-.carte{background:var(--carte);border-radius:12px;padding:1rem 1.2rem}
-.inter{border-left:6px solid var(--ok);padding:.6rem .8rem;margin-bottom:.6rem;background:#0b1222;border-radius:8px}
-.inter.urgente{border-color:var(--urgent)}.inter.attente{border-color:var(--attente)}
-.inter .haut{display:flex;justify-content:space-between;gap:1rem;font-weight:600;font-size:1.1rem}
-.inter .bas{color:var(--doux);margin-top:.2rem}
-.etiquette{display:inline-block;padding:.1rem .5rem;border-radius:999px;background:var(--ligne);font-size:.8rem;margin-right:.4rem}
-.rdv{display:flex;gap:.8rem;padding:.35rem 0;border-bottom:1px solid var(--ligne)}.rdv.passe{opacity:.4}
-.rdv .h{min-width:3.2rem;font-variant-numeric:tabular-nums;color:var(--doux)}
-.agenda h3{margin:.8rem 0 .3rem;font-size:1rem}.pastille{display:inline-block;width:.7rem;height:.7rem;border-radius:50%;margin-right:.4rem}
-table{width:100%;border-collapse:collapse;font-size:.9rem}th,td{text-align:left;padding:.45rem;border-bottom:1px solid var(--ligne);vertical-align:top}
-th{color:var(--doux);font-weight:600}input,select,button{font:inherit;padding:.3rem .5rem;border-radius:6px;border:1px solid var(--ligne);background:#0b1222;color:var(--texte)}
-button{background:#2563eb;border-color:#2563eb;cursor:pointer}.vide{color:var(--doux);font-style:italic}
+:root{--fond:#0b1526;--carte:#13233b;--texte:#f1f5f9;--doux:#8fa3bd;--ligne:#22385a;--urgent:#ef4444;--attente:#f59e0b;--ok:#22c55e;--bleu:#3fa7d6}
+*{box-sizing:border-box;margin:0}
+html{font-size:clamp(14px,1vw,20px)}
+body{background:var(--fond);color:var(--texte);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;min-height:100vh;padding-bottom:env(safe-area-inset-bottom)}
+a{color:#a1d8ee}
+header{display:flex;justify-content:space-between;align-items:center;gap:.6rem;padding:calc(.5rem + env(safe-area-inset-top)) 1.2rem .5rem;border-bottom:1px solid var(--ligne);position:sticky;top:0;z-index:50;background:var(--fond);box-shadow:0 6px 12px -8px rgba(0,0,0,.6)}
+header h1{font-size:1.6rem;font-weight:700;display:flex;align-items:center;gap:.6rem;white-space:nowrap}header h1 span{color:#a1d8ee}
+header h1 img{height:2.6rem;width:auto;background:#fff;border-radius:8px;padding:.15rem .3rem}
+header nav.pages{display:flex;gap:.3rem;margin-left:auto;margin-right:1.2rem}
+header nav.pages a{white-space:nowrap;color:var(--doux);text-decoration:none;font-size:.85rem;padding:.2rem .6rem;border-radius:999px;border:1px solid var(--ligne)}
+header nav.pages a.ici{color:var(--texte);border-color:var(--bleu)}
+#h{font-size:1.3rem;font-variant-numeric:tabular-nums;color:#a1d8ee;white-space:nowrap}
+main{padding:1rem 1.2rem;display:flex;flex-direction:column;gap:1rem;max-width:110rem;margin:0 auto}
+.carte{background:var(--carte);border-radius:12px;padding:.9rem 1rem;overflow-x:auto}
+.outils{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center}
+.onglets{display:flex;gap:.3rem}.onglets a,.onglets b{padding:.25rem .8rem;border-radius:999px;border:1px solid var(--ligne);text-decoration:none;font-size:.9rem;color:var(--doux);font-weight:500}
+.onglets b{color:var(--texte);border-color:var(--bleu)}
+table{width:100%;border-collapse:collapse;font-size:.9rem}
+th{color:var(--doux);font-weight:500;font-size:.75rem;text-transform:uppercase;letter-spacing:.04em;text-align:left;padding:.4rem .5rem;border-bottom:2px solid var(--ligne)}
+td{text-align:left;padding:.55rem .5rem;border-bottom:1px solid var(--ligne);vertical-align:top;line-height:1.35}
+tr.urgente td{background:#2a1418}
+td .doux,.vide{color:var(--doux);font-size:.85em}.vide{font-style:italic}
+.ref{font-weight:600}.qui{font-weight:600}
+img.logo{height:1.4em;width:1.4em;object-fit:contain;background:#fff;border-radius:5px;padding:1px;vertical-align:middle;margin-right:.3rem}
+.statut{display:inline-block;border-radius:6px;padding:.1rem .5rem;font-size:.78rem;font-weight:700;white-space:nowrap}
+.statut.a_planifier{background:#3b2a0a;color:#fbbf24}.statut.coordonnees_demandees{background:#3b2a0a;color:#f59e0b}
+.statut.planifiee{background:#0c2d4a;color:#7dd3fc}.statut.realisee,.statut.traite{background:#0b3320;color:#4ade80}
+.statut.annulee,.statut.rien_a_faire,.statut.simulation{background:#222;color:#999}.statut.erreur{background:#3a1015;color:#fca5a5}
+.tag{display:inline-block;background:var(--urgent);color:#fff;border-radius:6px;padding:0 .45rem;font-size:.8em;font-weight:700}.tag.devis{background:var(--bleu)}
+.action{display:block;font-size:.85em}.action.ko{color:#fca5a5}
+input,select,button{font:inherit;font-size:.9rem;padding:.35rem .55rem;border-radius:8px;border:1px solid var(--ligne);background:#0d1a2e;color:var(--texte)}
+button{background:#1d4ed8;border-color:#1d4ed8;cursor:pointer;font-weight:600}button:hover{background:#2563eb}
+form.suivi{display:grid;grid-template-columns:1fr 1fr;gap:.3rem;min-width:16rem}form.suivi input[type=datetime-local]{min-width:0}
+details summary{cursor:pointer;font-weight:600}
+form.nouvelle{display:grid;grid-template-columns:repeat(auto-fill,minmax(14rem,1fr));gap:.6rem;margin-top:.8rem}
+.recherche{flex:0 1 26rem;min-width:0}
 .erreur{color:var(--urgent)}
-@media (max-width:800px){.barre{flex-wrap:wrap;gap:.5rem;position:sticky;top:0;z-index:50;background:var(--fond);padding-top:calc(1rem + env(safe-area-inset-top))}.nav{overflow-x:auto;white-space:nowrap}.nav a{margin:0 .2rem}.carte{overflow-x:auto}}
-.nav a{margin-left:1rem;text-decoration:none;padding:.3rem .7rem;border-radius:8px}.nav a.ici{background:#2563eb;color:#fff}
-.filtres a{margin-right:.8rem}
+@media (max-width:800px){
+html{font-size:15px}
+.recherche{flex:1 1 100%}
+header{flex-wrap:wrap;padding-left:.7rem;padding-right:.7rem}header h1{font-size:1.15rem}header h1 img{height:1.9rem}#h{font-size:.95rem}
+header nav.pages{order:3;width:100%;margin:0;overflow-x:auto;padding-bottom:.2rem}
+main{padding:.6rem}
+/* Tableaux en fiches : une demande (ou un mail) par carte, chaque valeur avec son libellé. */
+.carte{padding:.4rem;overflow:visible}
+table,tbody,tr,td{display:block;width:100%}
+tr:has(th){display:none}
+tr{border:1px solid var(--ligne);border-radius:10px;margin:.4rem 0;padding:.3rem .2rem;background:#0f1d33}
+td{border:0;padding:.3rem .5rem .3rem 6.8rem;position:relative;min-height:1.6rem}
+td::before{content:attr(data-l);position:absolute;left:.5rem;top:.45rem;width:6rem;color:var(--doux);font-size:.68rem;text-transform:uppercase;letter-spacing:.04em}
+td[colspan]{padding-left:.5rem}td[colspan]::before{content:none}td:empty{display:none}
+tr.urgente td{background:none}tr.urgente{background:#2a1418}
+form.suivi{min-width:0;width:100%}form.suivi>*{min-width:0;width:100%}
+}
 `;
 
 /** Webapp : installable (« Ajouter à l'écran d'accueil »), s'ouvre sans barre de navigateur. */
@@ -616,8 +649,10 @@ function liensPages(config: Config, actuelle: string): string {
   return [...PAGES.slice(0, 2), ...vues, ...PAGES.slice(2)].map((p) => `<a href="${p.chemin}"${p.chemin === actuelle ? ' class="ici"' : ''}>${p.libelle}</a>`).join('');
 }
 
-function nav(config: Config, actuelle: string): string {
-  return `<div class="barre"><h1>Secrétariat CYRNEO</h1><div class="nav">${liensPages(config, actuelle)}</div></div>`;
+/** En-tête des pages de travail : le même que celui des écrans (logo, menu, horloge). */
+function nav(config: Config, actuelle: string, sousTitre: string): string {
+  return `<header><h1>${logo('cyrneo', '')}Groupe <span>CYRNEO</span> · ${e(sousTitre)}</h1><nav class="pages">${liensPages(config, actuelle)}</nav><div id="h"></div></header>
+<script>const h=document.getElementById('h');const t=()=>h.textContent=new Date().toLocaleString('fr-FR',{weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'});t();setInterval(t,15000);</script>`;
 }
 
 async function pageInterventions(config: Config, tout = false): Promise<string> {
@@ -627,41 +662,65 @@ async function pageInterventions(config: Config, tout = false): Promise<string> 
   const lignes = inters
     .map((i) => {
       const prevue = i.date_prevue ? heureParisPourChamp(new Date(i.date_prevue)) : '';
-      return `<tr><td>${i.urgence === 'urgente' ? '🚨 ' : ''}${e(i.reference)}<br><span class="vide">${e(fmtComplet.format(new Date(i.cree_le)))}</span></td>
-<td>${e(nomSociete(config, i.societe))}</td><td>${e(i.client_nom)}<br>${e(i.client_telephone)}<br><span class="vide">${e(i.client_email)}</span></td>
-<td>${e([i.adresse, i.commune].filter(Boolean).join(', '))}</td><td>${e(i.nature)}<br><span class="vide">${e(i.resume)}</span></td>
-<td><form method="post" action="/interventions/${i.id}"><select name="statut">${options(i.statut)}</select><br>
-<input type="datetime-local" name="date_prevue" value="${prevue}"><br><input name="intervenant" placeholder="Intervenant" value="${e(i.intervenant ?? '')}"><br>
-<button>Enregistrer</button></form></td></tr>`;
+      const urgente = i.urgence === 'urgente' && i.statut !== 'realisee' && i.statut !== 'annulee';
+      return `<tr${urgente ? ' class="urgente"' : ''}><td data-l="Réf."><span class="ref">${i.urgence === 'urgente' ? '🚨 ' : ''}${e(i.reference)}</span><br><span class="doux">${e(fmtComplet.format(new Date(i.cree_le)))}</span>${i.dolibarr_ref ? `<br><span class="doux">${e(i.dolibarr_ref)}</span>` : ''}</td>
+<td data-l="Société">${logo(i.societe)}${e(nomSociete(config, i.societe))}</td>
+<td data-l="Client"><span class="qui">${e(i.client_nom || 'Client')}</span><br>${e(i.client_telephone)}<br><span class="doux">${e(i.client_email)}</span></td>
+<td data-l="Lieu">${e([i.adresse, i.commune].filter(Boolean).join(', '))}</td>
+<td data-l="Demande">${etiquette(i)}${e(i.nature)}<br><span class="doux">${e(i.resume)}</span></td>
+<td data-l="Statut"><span class="statut ${i.statut}">${e(STATUTS[i.statut])}</span></td>
+<td data-l="Suivi"><form class="suivi" method="post" action="/interventions/${i.id}"><select name="statut">${options(i.statut)}</select><input name="intervenant" placeholder="Intervenant" value="${e(i.intervenant ?? '')}">
+<input type="datetime-local" name="date_prevue" value="${prevue}" title="Date prévue"><button>Enregistrer</button></form></td></tr>`;
     })
     .join('');
   const societes = config.societes.map((x) => `<option value="${e(x.id)}">${e(x.nom)}</option>`).join('');
-  const formulaire = `<details class="carte" style="margin:1.2rem 1.5rem 0"><summary style="cursor:pointer;font-weight:600">➕ Nouvelle demande (appel, passage au bureau…)</summary>
-<form method="post" action="/interventions/nouvelle" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(14rem,1fr));gap:.6rem;margin-top:.8rem">
+  const formulaire = `<details class="carte"><summary>➕ Nouvelle demande (appel, passage au bureau…)</summary>
+<form class="nouvelle" method="post" action="/interventions/nouvelle">
 <select name="societe">${societes}</select><select name="type"><option value="intervention">Intervention</option><option value="devis">Devis</option></select>
 <select name="urgence"><option value="normale">Normale</option><option value="urgente">Urgente</option></select>
 <input name="client_nom" placeholder="Client *" required><input name="client_telephone" placeholder="Téléphone"><input name="client_email" placeholder="Email">
 <input name="adresse" placeholder="Adresse"><input name="commune" placeholder="Commune"><input name="date_souhaitee" placeholder="Date souhaitée">
 <input name="nature" placeholder="Demande (ex. vidange fosse 3 m³) *" required style="grid-column:1/-1"><button>Créer la demande</button></form></details>`;
+  const onglets = tout
+    ? '<a href="/interventions">En cours</a><b>Tout l’historique</b>'
+    : '<b>En cours</b><a href="/interventions?tout=1">Tout l’historique</a>';
   return page(
-    'Interventions',
-    `${nav(config, '/interventions')}${formulaire}<div class="filtres" style="padding:1rem 1.5rem 0">${tout ? '<a href="/interventions">En cours</a><b>Tout l’historique</b> (300 dernières)' : '<b>En cours</b> · <a href="/interventions?tout=1">Tout l’historique</a>'}</div><div style="padding:1.2rem 1.5rem" class="carte"><table><tr><th>Réf.</th><th>Société</th><th>Client</th><th>Lieu</th><th>Demande</th><th>Suivi</th></tr>${lignes || '<tr><td colspan="6" class="vide">Rien en cours</td></tr>'}</table></div>`
+    'Historique',
+    `${nav(config, '/interventions', 'Historique')}<main>${formulaire}
+<div class="outils"><div class="onglets">${onglets}</div><span class="doux">${inters.length} demande${inters.length > 1 ? 's' : ''}${tout ? ' (300 dernières)' : ''}</span></div>
+<div class="carte"><table><tr><th>Réf.</th><th>Société</th><th>Client</th><th>Lieu</th><th>Demande</th><th>Statut</th><th>Suivi</th></tr>${lignes || '<tr><td colspan="7" class="vide">Rien en cours</td></tr>'}</table></div></main>`
   );
 }
 
+const ACTIONS_JOURNAL: Record<string, string> = {
+  creer_intervention: 'fiche créée',
+  completer_intervention: 'fiche complétée',
+  rainbow: 'Rainbow',
+  repondre: 'réponse au client',
+  classer_pieces_jointes: 'pièces jointes classées',
+  transferer: 'transfert',
+  bon_dolibarr: 'BI Dolibarr',
+  facture_dolibarr: 'facture Dolibarr',
+};
+const STATUTS_JOURNAL: Record<string, string> = { traite: 'traité', rien_a_faire: 'rien à faire', simulation: 'simulation', erreur: 'erreur' };
+
 async function pageJournal(config: Config, q: string): Promise<string> {
-  const lignes = (await chercherJournal(q))
+  const mails = await chercherJournal(q);
+  const lignes = mails
     .map(
-      (j) => `<tr><td>${e(fmtComplet.format(new Date(j.recu_le)))}</td><td>${e(j.boite)}</td><td>${e(j.expediteur)}</td><td>${e(j.sujet)}<br><span class="vide">${e(j.resume ?? '')}</span></td>
-<td>${e(j.categorie ? LIBELLES_CATEGORIES[j.categorie as Categorie] ?? j.categorie : '')}<br><span class="vide">${e(nomSociete(config, j.societe))}</span></td>
-<td>${e(j.statut)}${j.erreur ? `<br><span class="erreur">${e(j.erreur)}</span>` : ''}</td>
-<td>${j.actions.map((a) => `${a.ok ? '✓' : '✗'} ${e(a.action)} : ${e(a.detail)}`).join('<br>')}${j.fichiers.length ? `<br>📎 ${j.fichiers.map(e).join('<br>📎 ')}` : ''}</td></tr>`
+      (j) => `<tr${j.urgence === 'urgente' ? ' class="urgente"' : ''}><td data-l="Reçu"><span class="ref">${e(fmtComplet.format(new Date(j.recu_le)))}</span><br><span class="doux">${e(j.boite)}</span></td>
+<td data-l="Expéditeur"><span class="qui">${e(j.expediteur)}</span></td>
+<td data-l="Sujet">${e(j.sujet)}<br><span class="doux">${e(j.resume ?? '')}</span></td>
+<td data-l="Tri">${e(j.categorie ? LIBELLES_CATEGORIES[j.categorie as Categorie] ?? j.categorie : '')}<br><span class="doux">${j.societe ? `${logo(j.societe)}${e(nomSociete(config, j.societe))}` : ''}</span></td>
+<td data-l="Statut"><span class="statut ${e(j.statut)}">${e(STATUTS_JOURNAL[j.statut] ?? j.statut)}</span>${j.erreur ? `<br><span class="erreur">${e(j.erreur)}</span>` : ''}</td>
+<td data-l="Ce qui a été fait">${j.actions.map((a) => `<span class="action${a.ok ? '' : ' ko'}">${a.ok ? '✓' : '✗'} ${e(ACTIONS_JOURNAL[a.action] ?? a.action.replace(/_/g, ' '))} : ${e(a.detail)}</span>`).join('')}${j.fichiers.map((f) => `<span class="action">📎 ${e(f)}</span>`).join('')}</td></tr>`
     )
     .join('');
   return page(
     'Journal',
-    `${nav(config, '/journal')}<div style="padding:1.2rem 1.5rem"><form><input name="q" value="${e(q)}" placeholder="Nom, sujet, boîte…" size="40"> <button>Chercher</button></form>
-<div class="carte" style="margin-top:1rem"><table><tr><th>Reçu</th><th>Boîte</th><th>Expéditeur</th><th>Sujet</th><th>Tri</th><th>Statut</th><th>Ce qui a été fait</th></tr>${lignes || '<tr><td colspan="7" class="vide">Aucun mail</td></tr>'}</table></div></div>`
+    `${nav(config, '/journal', 'Journal')}<main>
+<form class="outils"><input class="recherche" name="q" value="${e(q)}" placeholder="Nom, sujet, boîte…"><button>Chercher</button><span class="doux">${mails.length} mail${mails.length > 1 ? 's' : ''}</span></form>
+<div class="carte"><table><tr><th>Reçu</th><th>Expéditeur</th><th>Sujet</th><th>Tri</th><th>Statut</th><th>Ce qui a été fait</th></tr>${lignes || '<tr><td colspan="6" class="vide">Aucun mail</td></tr>'}</table></div></main>`
   );
 }
 
@@ -683,10 +742,10 @@ function pageCle(url: URL): string {
   const erreur = url.searchParams.has('cle') ? '<p class="erreur">Clé incorrecte.</p>' : '';
   return page(
     'Accès',
-    `<form method="get" action="${e(url.pathname)}" style="max-width:420px;margin:15vh auto;padding:2rem" class="carte">
-<h1 style="margin-bottom:1rem">Secrétariat CYRNEO</h1>${erreur}
+    `<form method="get" action="${e(url.pathname)}" style="max-width:420px;margin:15vh auto;padding:2rem;display:grid;gap:.8rem" class="carte">
+<h1 style="display:flex;align-items:center;gap:.6rem;font-size:1.4rem">${logo('cyrneo', 'logo')}Groupe CYRNEO</h1>${erreur}
 <p class="vide">Clé d'accès (une seule fois sur cet appareil)</p>
-<input name="cle" type="password" autofocus style="width:100%;margin:.5rem 0 1rem"><button style="width:100%">Entrer</button></form>`
+<input name="cle" type="password" autofocus style="width:100%"><button style="width:100%">Entrer</button></form>`
   );
 }
 
