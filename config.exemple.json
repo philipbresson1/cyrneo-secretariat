@@ -140,7 +140,7 @@
   },
   "dolibarr": {
     "actif": false,
-    "url": "https://dolibarr.groupecyrneo.com",
+    "url": "https://cyrneo.on2.netlogic.fr",
     "entites": {
       "cyrneo": 1,
       "sud-assainissement": 2,

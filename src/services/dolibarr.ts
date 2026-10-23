@@ -68,6 +68,18 @@ export async function nomEntite(config: Config, entite: number): Promise<string>
   return societe.name ?? societe.nom ?? '(sans nom)';
 }
 
+/** Entités du module Multi-société, si son API est disponible : id et nom de chaque société.
+ *  Renvoie null quand l'API ne l'expose pas (on vérifie alors entité par entité). */
+export async function listerEntites(config: Config): Promise<{ id: number; nom: string }[] | null> {
+  try {
+    const liste = await appel<{ id: number | string; label?: string; name?: string }[]>(config, 1, 'GET', '/multicompany?limit=50');
+    return (liste ?? []).map((x) => ({ id: Number(x.id), nom: x.label ?? x.name ?? '' }));
+  } catch (e) {
+    if (e instanceof ErreurDolibarr && (e.statut === 404 || e.statut === 501)) return null;
+    throw e;
+  }
+}
+
 type TiersBrut = { id: string | number; name?: string; nom?: string };
 
 function filtre(valeur: string): string {
