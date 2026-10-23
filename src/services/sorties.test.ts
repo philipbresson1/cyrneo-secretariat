@@ -53,7 +53,7 @@ describe('écran et pages locales', () => {
     expect(await j.text()).toContain('Facture reçue');
     expect((await fetch(`${base}/interventions?cle=cle-test`)).status).toBe(200);
     const equipes = await (await fetch(`${base}/equipes?zoom=1.4`)).text();
-    expect(equipes).toContain('Planning des équipes');
+    expect(equipes).toContain('Planning équipes');
     expect(equipes).toContain('calc(clamp(15px,1.3vw,36px) * 1.4)');
     expect(equipes).toContain('En attente de réalisation');
     expect(equipes).toContain('Jean &lt;Martin&gt;');

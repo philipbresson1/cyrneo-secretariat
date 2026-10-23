@@ -7,6 +7,8 @@
  * La clé se donne une fois dans l'adresse (?cle=…) puis reste en cookie.
  */
 import http from 'node:http';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { Config, Intervention, StatutIntervention } from '../logique/types';
 import { LIBELLES_CATEGORIES, type Categorie } from '../logique/types';
@@ -98,6 +100,17 @@ function heureParisPourChamp(d: Date): string {
   return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`;
 }
 
+/** Logo d'une société (servi par /logos/…), sur pastille blanche : les logos sont faits pour
+ *  un fond clair. Corse 3D partage celui de Multiservices. */
+const LOGOS: Record<string, string> = {
+  cyrneo: 'groupe-cyrneo', 'sud-assainissement': 'sud-assainissement', 'sud-travaux': 'sud-travaux', sottec: 'sottec',
+  'corse-3d': 'multiservices-2a', 'multiservices-2a': 'multiservices-2a', 'entretien-couleurs': 'entretien-couleurs',
+};
+function logo(societe: string | null | undefined, classe = 'logo'): string {
+  const f = societe ? LOGOS[societe] : undefined;
+  return f ? `<img class="${classe}" src="/logos/${f}.png" alt="">` : '';
+}
+
 function nomSociete(config: Config, id: string | null): string {
   return config.societes.find((s) => s.id === id)?.nom ?? id ?? '';
 }
@@ -126,19 +139,23 @@ const STYLE_ECRAN = `
 *{box-sizing:border-box;margin:0}
 html{font-size:clamp(13px,1.12vw,30px)}
 body{height:100vh;overflow:hidden;background:var(--fond);color:var(--texte);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;display:flex;flex-direction:column}
-header{display:flex;justify-content:space-between;align-items:baseline;padding:.5rem 1.2rem;border-bottom:1px solid var(--ligne)}
-header h1{font-size:1.6rem;font-weight:700}header h1 span{color:#a1d8ee}
+header{display:flex;justify-content:space-between;align-items:center;padding:.5rem 1.2rem;border-bottom:1px solid var(--ligne)}
+header h1{font-size:1.6rem;font-weight:700;display:flex;align-items:center;gap:.6rem;white-space:nowrap}header h1 span{color:#a1d8ee}
+header h1 img{height:2.6rem;width:auto;background:#fff;border-radius:8px;padding:.15rem .3rem}
+img.logo{height:1.5em;width:1.5em;object-fit:contain;background:#fff;border-radius:5px;padding:1px;vertical-align:middle;flex:none}
+img.logo-col{height:2.4rem;width:2.4rem;object-fit:contain;background:#fff;border-radius:8px;padding:2px;flex:none}
+section h2 .titre{display:flex;align-items:center;gap:.55rem}
 header nav.pages{display:flex;gap:.3rem;margin-left:auto;margin-right:1.2rem;align-self:center}
-header nav.pages a{color:var(--doux);text-decoration:none;font-size:.85rem;padding:.2rem .6rem;border-radius:999px;border:1px solid var(--ligne)}
+header nav.pages a{white-space:nowrap;color:var(--doux);text-decoration:none;font-size:.85rem;padding:.2rem .6rem;border-radius:999px;border:1px solid var(--ligne)}
 header nav.pages a.ici{color:var(--texte);border-color:#3fa7d6}
 a.compteur{color:inherit;text-decoration:none;cursor:pointer}a.compteur:hover,a.compteur.choisi{box-shadow:inset 0 0 0 2px #3fa7d6}
 a.action{color:inherit;text-decoration:none}a.action:hover span{text-decoration:underline}
 section h2 a.retour{font-size:.9rem;color:#a1d8ee;text-decoration:none;border:1px solid #3fa7d6;border-radius:999px;padding:.1rem .7rem}
-#h{font-size:1.8rem;font-variant-numeric:tabular-nums;color:#a1d8ee}
+#h{font-size:1.6rem;font-variant-numeric:tabular-nums;color:#a1d8ee;white-space:nowrap}
 main{flex:1;min-height:0;display:grid;grid-template-columns:repeat(var(--cols),1fr) 1.15fr;gap:.7rem;padding:.7rem 1.2rem}
 section{min-height:0;display:flex;flex-direction:column;background:var(--carte);border-radius:12px;padding:.9rem 1rem}
 section h2{font-size:1.2rem;margin-bottom:.6rem;display:flex;justify-content:space-between;align-items:baseline}
-section h2 small{font-size:.85rem;color:var(--doux);font-weight:500}
+section h2 small{font-size:.85rem;color:var(--doux);font-weight:500;white-space:nowrap}
 .liste{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column;gap:.35rem}
 .rdv{display:flex;gap:.6rem;padding:.35rem .5rem;border-left:4px solid var(--c);background:#0d1a2e;border-radius:6px;line-height:1.25}
 .rdv.passe{opacity:.38}.rdv.encours{background:#173457;box-shadow:inset 0 0 0 1px #3fa7d6}
@@ -193,7 +210,9 @@ main.cahier{grid-template-columns:1fr 21rem}
 
 // Retire les éléments qui débordent d'une liste et affiche « + N autres » : l'écran ne défile jamais.
 const SCRIPT_ECRAN = `
-const h=document.getElementById('h');const t=()=>h.textContent=new Date().toLocaleString('fr-FR',{weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'});t();setInterval(t,15000);
+const h=document.getElementById('h');h.title='Plein écran';h.style.cursor='pointer';
+h.onclick=()=>document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen().catch(()=>{});
+const t=()=>h.textContent=new Date().toLocaleString('fr-FR',{weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'});t();setInterval(t,15000);
 document.querySelectorAll('.liste').forEach(l=>{let n=0;const p=document.createElement('div');p.className='plus';
 while(l.scrollHeight>l.clientHeight+1){const el=[...l.children].filter(x=>!x.classList.contains('plus')&&!x.classList.contains('sep')).pop();if(!el)break;el.remove();n++;p.textContent='+ '+n+' autre'+(n>1?'s':'');if(!p.isConnected)l.appendChild(p);}
 const der=l.lastElementChild;if(der&&der.classList.contains('sep'))der.remove();});
@@ -206,7 +225,7 @@ function ligneRdv(r: Rdv, a: AgendaLu, plusieurs: boolean, maintenant: number): 
   return `<div class="rdv ${classe}" style="--c:${e(a.couleur)}"><span class="h">${heure}</span><span class="t">${e(nettoyerTitre(r.titre))}${plusieurs ? ` <span class="ag">· ${e(a.nom)}</span>` : ''}</span></div>`;
 }
 
-function colonnePlanning(titre: string, agendas: AgendaLu[], maintenant: number): string {
+function colonnePlanning(titre: string, agendas: AgendaLu[], maintenant: number, societe = ''): string {
   const plusieurs = agendas.length > 1;
   const trier = <T extends { r: Rdv }>(x: T[]): T[] =>
     x.sort((p, q) => (p.r.journeeEntiere === q.r.journeeEntiere ? (p.r.debut?.getTime() ?? 0) - (q.r.debut?.getTime() ?? 0) : p.r.journeeEntiere ? -1 : 1));
@@ -217,7 +236,7 @@ function colonnePlanning(titre: string, agendas: AgendaLu[], maintenant: number)
   // Les rendez-vous passés ne restent affichés que les jours calmes : sinon ils prennent la
   // place de ce qui arrive (dont demain).
   const visibles = jour.length <= 5 ? jour : jour.filter((x) => !x.r.passe);
-  return `<section><h2>${e(titre)} <small>${restants} à venir</small></h2><div class="liste">${erreurs}${
+  return `<section><h2><span class="titre">${logo(societe, 'logo-col')}${e(titre)}</span> <small>${restants} à venir</small></h2><div class="liste">${erreurs}${
     visibles.map((x) => ligneRdv(x.r, x.a, plusieurs, maintenant)).join('') || '<div class="vide">Rien aujourd’hui</div>'
   }${demain.length ? `<div class="sep">Demain · ${demain.length}</div>${demain.map((x) => ligneRdv(x.r, x.a, plusieurs, maintenant)).join('')}` : ''}</div></section>`;
 }
@@ -240,7 +259,7 @@ function ligneBon(config: Config, i: Intervention): string {
   const attente = i.statut === 'coordonnees_demandees';
   const classe = i.urgence === 'urgente' ? 'urgente' : attente ? 'attente' : '';
   const lieu = [i.commune || i.adresse, nomSociete(config, i.societe)].filter(Boolean).join(' · ');
-  return `<div class="bon ${classe}"><div class="l1"><span>${i.urgence === 'urgente' ? '🚨 ' : ''}${e(i.client_nom || 'Client')}</span><span class="age">${depuis(i.cree_le)}</span></div>
+  return `<div class="bon ${classe}"><div class="l1"><span>${logo(i.societe)} ${i.urgence === 'urgente' ? '🚨 ' : ''}${e(i.client_nom || 'Client')}</span><span class="age">${depuis(i.cree_le)}</span></div>
 <div class="l2">${etiquette(i)}${e(i.nature || i.resume)}</div><div class="l2">${attente ? `⏳ ${libelleAttente(i)} · ` : ''}${e(lieu)}${i.client_telephone ? ` · ${e(i.client_telephone)}` : ''}</div></div>`;
 }
 
@@ -251,7 +270,7 @@ function zoomDe(url: URL): number {
 }
 
 function pageAffichage(titre: string, sousTitre: string, contenu: string, zoom: number, base: string, chemin = ''): string {
-  const corps = `<header><h1>Groupe <span>CYRNEO</span> · ${e(sousTitre)}</h1><nav class="pages">${liensPages(chemin)}</nav><div id="h"></div></header>${contenu}<script>${SCRIPT_ECRAN}</script>`;
+  const corps = `<header><h1>${logo('cyrneo', '')}Groupe <span>CYRNEO</span> · ${e(sousTitre)}</h1><nav class="pages">${liensPages(chemin)}</nav><div id="h"></div></header>${contenu}<script>${SCRIPT_ECRAN}</script>`;
   return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="60"><title>${e(titre)}</title><style>${STYLE_ECRAN}html{font-size:calc(${base} * ${zoom})}</style></head><body>${corps}</body></html>`;
 }
 
@@ -273,7 +292,12 @@ async function colonnesPlanning(config: Config): Promise<string[]> {
   const agendas = await lireAgendas(config);
   const maintenant = Date.now();
   return config.ecran.colonnes.map((c) =>
-    colonnePlanning(c.titre, c.agendas.map((env) => agendas.find((a) => a.env === env)).filter((a): a is AgendaLu => !!a), maintenant)
+    colonnePlanning(
+      c.titre,
+      c.agendas.map((env) => agendas.find((a) => a.env === env)).filter((a): a is AgendaLu => !!a),
+      maintenant,
+      config.agendas.find((a) => a.icsEnv === c.agendas[0])?.societe
+    )
   );
 }
 
@@ -298,7 +322,7 @@ async function pageEquipes(config: Config, url: URL): Promise<string> {
 <section><h2>En attente de réalisation <small>${aRealiser.length}</small></h2><div class="liste">${
     ouvertes.erreur ? `<div class="alerte">${e(ouvertes.erreur)}</div>` : aRealiser.map((i) => ligneBon(config, i)).join('') || '<div class="vide">Rien en attente 👍</div>'
   }</div></section></main>`;
-  return pageAffichage('Planning équipes', 'Planning des équipes', contenu, zoomDe(url), 'clamp(15px,1.3vw,36px)', '/equipes');
+  return pageAffichage('Planning équipes', 'Équipes', contenu, zoomDe(url), 'clamp(15px,1.3vw,36px)', '/equipes');
 }
 
 async function chargerOuvertes(): Promise<{ bons: Intervention[]; erreur: string }> {
@@ -323,7 +347,7 @@ function ligneAppel(config: Config, i: Intervention): string {
 <span title="${e(i.source ?? 'mail')}">${SOURCES[i.source ?? 'mail'] ?? '✉️'}</span>
 <span class="qui">${i.urgence === 'urgente' ? '🚨 ' : ''}${e(i.client_nom || 'Client')}<small>${e(i.client_telephone || '—')}</small></span>
 <span class="quoi">${etiquette(i, false)}${e(i.nature || i.resume)}</span>
-<span class="ou">${e(lieu)}</span>
+<span class="ou">${logo(i.societe)} ${e(lieu)}</span>
 <span><span class="statut ${i.statut}">${e(STATUTS[i.statut])}</span><span class="bi">${e(i.reference)}${i.dolibarr_ref ? ` · ${e(i.dolibarr_ref)}` : ''}</span></span>
 </div>`;
 }
@@ -510,6 +534,13 @@ export async function gererRequete(req: http.IncomingMessage, res: http.ServerRe
     if (ecrans[url.pathname]) {
       if (!config.serveur.ecranPublic && !autorise) return envoyer(401, pageCle(url));
       return envoyer(200, await ecrans[url.pathname](config, url), entetesCle);
+    }
+    const l = /^\/logos\/([a-z0-9-]+)\.png$/.exec(url.pathname);
+    if (l && Object.values(LOGOS).includes(l[1])) {
+      const image = await readFile(path.resolve('assets/signature', `${l[1]}.png`));
+      res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400' });
+      res.end(image);
+      return;
     }
     if (url.pathname === '/etat') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
