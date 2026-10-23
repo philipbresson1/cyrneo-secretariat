@@ -169,6 +169,14 @@ async function boucle(config: Config): Promise<void> {
       }
     }
 
+    // Redémarrage de nuit : secretariat.ps1 relance aussitôt le démon après un git pull,
+    // ce qui installe les mises à jour sans intervention.
+    if (heure.startsWith('03:') && Date.now() - etat.demarreLe.getTime() > 3_600_000) {
+      log('Redémarrage de nuit pour mise à jour');
+      await arreterRainbow();
+      process.exit(0);
+    }
+
     const attente = Math.max(10_000, config.intervalleMinutes * 60_000 - (Date.now() - debut));
     await new Promise((r) => setTimeout(r, attente));
   }
