@@ -453,7 +453,7 @@ async function pageEcran(config: Config, url: URL): Promise<string> {
 <section><h2>Bons à traiter <small>${bons.length}${enRetard ? ` · <span id="retards">${enRetard} depuis + 24 h</span>` : ''}</small></h2><div class="liste">${
     erreur ? `<div class="alerte">${e(erreur)}</div>` : bons.map((i) => ligneBon(config, i)).join('') || '<div class="vide">Tout est planifié 👍</div>'
   }</div></section></main>`;
-  return pageAffichage(config, 'Planning CYRNEO', 'Planning', contenu, zoomDe(url), 'clamp(13px,1.12vw,30px)', '/ecran');
+  return pageAffichage(config, 'Planning CYRNEO', 'Planning', contenu, zoomDe(url), 'clamp(9px,1.12vw,30px)', '/ecran');
 }
 
 /** Écran des équipes : plannings des agents, et à droite les inters en attente de réalisation. */
@@ -466,7 +466,7 @@ async function pageEquipes(config: Config, url: URL): Promise<string> {
 <section><h2>En attente de réalisation <small>${aRealiser.length}</small></h2><div class="liste">${
     ouvertes.erreur ? `<div class="alerte">${e(ouvertes.erreur)}</div>` : aRealiser.map((i) => ligneBon(config, i)).join('') || '<div class="vide">Rien en attente 👍</div>'
   }</div></section></main>`;
-  return pageAffichage(config, 'Planning équipes', 'Équipes', contenu, zoomDe(url), 'clamp(15px,1.3vw,36px)', '/equipes');
+  return pageAffichage(config, 'Planning équipes', 'Équipes', contenu, zoomDe(url), 'clamp(9px,1.3vw,36px)', '/equipes');
 }
 
 /** Écran des sociétés du bâtiment (bureau du conducteur de travaux, chef d'équipe) : Gantt des
@@ -491,7 +491,7 @@ async function pageVue(config: Config, url: URL, vue: NonNullable<Config['ecran'
   }</div></section>`;
   const contenu = `<main class="btp">${gantt(config, vue.societes, agendas)}<div class="cote">${devis.join('')}${acceptes}</div></main>`;
   // En-tête court (les sociétés sont dans le Gantt) : l'horloge doit tenir sur la ligne.
-  return pageAffichage(config, vue.titre, vue.chemin.slice(1).replace(/^./, (c) => c.toUpperCase()), contenu, zoomDe(url), 'clamp(14px,1.1vw,32px)', vue.chemin);
+  return pageAffichage(config, vue.titre, vue.chemin.slice(1).replace(/^./, (c) => c.toUpperCase()), contenu, zoomDe(url), 'clamp(9px,1.1vw,32px)', vue.chemin);
 }
 
 async function chargerOuvertes(): Promise<{ bons: Intervention[]; erreur: string }> {
@@ -600,7 +600,7 @@ async function pageBureau(config: Config, url: URL): Promise<string> {
 <section><h2>À faire</h2>${actions}</section>
 <section class="extensible"><h2>BI finalisés <small>par les agents</small></h2><div class="liste">${faits}</div></section>
 </div></main>`;
-  return pageAffichage(config, 'Bureau CYRNEO', vue ? `Bureau · ${vue.titre}` : 'Bureau', contenu, zoomDe(url), 'clamp(14px,1.15vw,34px)', '/bureau');
+  return pageAffichage(config, 'Bureau CYRNEO', vue ? `Bureau · ${vue.titre}` : 'Bureau', contenu, zoomDe(url), 'clamp(9px,1.15vw,34px)', '/bureau');
 }
 
 const PAGES = [
