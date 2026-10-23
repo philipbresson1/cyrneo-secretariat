@@ -53,7 +53,32 @@ export async function traiterMail(mail: MailRecu, boite: Boite, config: Config):
     : null;
 
   // Une panne du modèle remonte à l'appelant : le mail n'est pas journalisé et sera retenté.
-  const c = await classer(mail, config, contexte);
+  let c = await classer(mail, config, contexte);
+  let suiteDe: Intervention | null = null;
+  // Réponse dans une conversation qui a déjà sa fiche : jamais de seconde fiche.
+  if (!liee && ['demande_intervention', 'demande_devis', 'complement_coordonnees', 'relance_client'].includes(c.categorie)) {
+    const fil = await db.interventionDuFil(mail);
+    if (fil) {
+      if (interne) {
+        // Échange entre collègues sur une demande déjà suivie : noté, rien d'autre.
+        await db.journaliser({
+          mail,
+          classification: c,
+          societe: fil.societe,
+          actions: [{ action: 'creer_intervention', detail: `suite de ${fil.reference} (échange interne), pas de nouvelle fiche`, ok: true, simulee: false }],
+          statut: 'rien_a_faire',
+          interventionId: fil.id,
+        });
+        return { statut: 'rien_a_faire', resume: `suite interne de ${fil.reference}` };
+      }
+      // Le client répond dans le fil : il complète ses coordonnées, ou il relance.
+      if (fil.statut === 'coordonnees_demandees') liee = fil;
+      else {
+        c = { ...c, categorie: 'relance_client' };
+        suiteDe = fil;
+      }
+    }
+  }
   // Sans en-tête de réponse, on ne rattache à une demande existante que si le modèle y voit
   // un complément de coordonnées : deux bons de travaux du même bailleur restent deux demandes.
   if (!liee && !interne && c.categorie === 'complement_coordonnees') liee = await db.interventionParExpediteur(mail);
@@ -65,7 +90,8 @@ export async function traiterMail(mail: MailRecu, boite: Boite, config: Config):
   const simulation = config.mode === 'simulation';
 
   const faites: ActionExecutee[] = [];
-  let intervention: Intervention | null = liee;
+  // La relance d'une demande déjà suivie reste rattachée à sa fiche (journal, Rainbow).
+  let intervention: Intervention | null = liee ?? suiteDe;
   const classification: Classification = liee ? fusionnerContact(c, liee) : c;
   let fichiers: string[] = [];
   const envoisANoter: { type: string; destinataire: string; sujet: string; messageId: string | null }[] = [];

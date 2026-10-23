@@ -194,6 +194,20 @@ export async function interventionParReponse(mail: MailRecu): Promise<Interventi
   return data && data.length > 0 ? (data[0] as Intervention) : null;
 }
 
+/** Demande déjà ouverte dans la même conversation (un mail du fil, client ou collègue, a déjà
+ *  donné une fiche) : une réponse dans le fil ne doit jamais créer une seconde fiche. */
+export async function interventionDuFil(mail: MailRecu): Promise<Intervention | null> {
+  const ids = [mail.inReplyTo, ...mail.references].filter((x): x is string => !!x);
+  if (ids.length === 0) return null;
+  const parFiche = verifier(await sb.from('interventions').select('*').in('mail_message_id', ids).limit(1), 'Recherche fil (fiche)');
+  if (parFiche && parFiche.length > 0) return parFiche[0] as Intervention;
+  const parJournal = verifier(
+    await sb.from('secretariat_journal').select('intervention_id').in('message_id', ids).not('intervention_id', 'is', null).limit(1),
+    'Recherche fil (journal)'
+  ) as { intervention_id: number }[];
+  return parJournal && parJournal.length > 0 ? interventionParId(parJournal[0].intervention_id) : null;
+}
+
 /** Dernière demande du même expéditeur encore en attente de coordonnées (15 jours). À n'utiliser
  *  que si le mail est bien un complément : un bailleur envoie souvent plusieurs bons distincts. */
 export async function interventionParExpediteur(mail: MailRecu): Promise<Intervention | null> {
