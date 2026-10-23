@@ -81,3 +81,13 @@ describe('erreurs Rainbow', () => {
     expect(raisonRainbow({ code: 401, error: { errorDetailsCode: 401500, errorDetails: 'Invalid credentials' } })).toMatch(/refusés \(Invalid credentials\)/);
   });
 });
+
+import { sujetSansPrefixe } from './stockage';
+describe('sujet d’une conversation', () => {
+  it('retire les préfixes de réponse et de transfert', () => {
+    expect(sujetSansPrefixe('Re: URGENT MAX IMMOBILIER')).toBe('urgent max immobilier');
+    expect(sujetSansPrefixe('RE: TR: Re:  URGENT  MAX IMMOBILIER')).toBe('urgent max immobilier');
+    expect(sujetSansPrefixe('Fwd: R: Bon de travaux 12')).toBe('bon de travaux 12');
+    expect(sujetSansPrefixe('Réparation fosse')).toBe('réparation fosse');
+  });
+});

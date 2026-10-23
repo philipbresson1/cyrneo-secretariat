@@ -57,7 +57,7 @@ export async function traiterMail(mail: MailRecu, boite: Boite, config: Config):
   let suiteDe: Intervention | null = null;
   // Réponse dans une conversation qui a déjà sa fiche : jamais de seconde fiche.
   if (!liee && ['demande_intervention', 'demande_devis', 'complement_coordonnees', 'relance_client'].includes(c.categorie)) {
-    const fil = await db.interventionDuFil(mail);
+    const fil = await db.interventionDuFil(mail, config.domainesInternes);
     if (fil) {
       if (interne) {
         // Échange entre collègues sur une demande déjà suivie : noté, rien d'autre.

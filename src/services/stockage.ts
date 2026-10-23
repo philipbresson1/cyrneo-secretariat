@@ -4,6 +4,7 @@
 import { creerClientAdmin } from '../lib/supabase/admin';
 import type { ActionExecutee, Classification, Intervention, MailRecu, StatutIntervention, TypeDemande } from '../logique/types';
 import { referenceIntervention } from '../logique/modeles';
+import { estInterne } from '../logique/garde-fous';
 
 // Créé au premier appel : .env.local doit être chargé avant.
 let client: ReturnType<typeof creerClientAdmin> | null = null;
@@ -196,16 +197,50 @@ export async function interventionParReponse(mail: MailRecu): Promise<Interventi
 
 /** Demande déjà ouverte dans la même conversation (un mail du fil, client ou collègue, a déjà
  *  donné une fiche) : une réponse dans le fil ne doit jamais créer une seconde fiche. */
-export async function interventionDuFil(mail: MailRecu): Promise<Intervention | null> {
+export async function interventionDuFil(mail: MailRecu, internes: string[] = []): Promise<Intervention | null> {
   const ids = [mail.inReplyTo, ...mail.references].filter((x): x is string => !!x);
-  if (ids.length === 0) return null;
+  if (ids.length === 0) return interventionParSujet(mail, internes);
   const parFiche = verifier(await sb.from('interventions').select('*').in('mail_message_id', ids).limit(1), 'Recherche fil (fiche)');
   if (parFiche && parFiche.length > 0) return parFiche[0] as Intervention;
   const parJournal = verifier(
     await sb.from('secretariat_journal').select('intervention_id').in('message_id', ids).not('intervention_id', 'is', null).limit(1),
     'Recherche fil (journal)'
   ) as { intervention_id: number }[];
-  return parJournal && parJournal.length > 0 ? interventionParId(parJournal[0].intervention_id) : null;
+  if (parJournal && parJournal.length > 0) return interventionParId(parJournal[0].intervention_id);
+  return interventionParSujet(mail, internes);
+}
+
+/** « Re: URGENT MAX IMMOBILIER » → « urgent max immobilier ». */
+export function sujetSansPrefixe(sujet: string): string {
+  return sujetNormalise(sujet.replace(/^\s*((re|tr|fw|fwd|r|aw|wg)\s*(\[\d+\])?\s*:\s*)+/i, ''));
+}
+
+/** Filet de sécurité quand les en-têtes de réponse manquent (certaines messageries les
+ *  perdent) : un « Re: » / « TR: » dont le sujet correspond à une demande encore ouverte des
+ *  14 derniers jours, échangé avec le même client ou par un collègue, est la même conversation. */
+async function interventionParSujet(mail: MailRecu, internes: string[]): Promise<Intervention | null> {
+  if (!/^\s*(re|tr|fw|fwd|r|aw|wg)\s*(\[\d+\])?\s*:/i.test(mail.sujet)) return null;
+  const base = sujetSansPrefixe(mail.sujet);
+  if (base.length < 6) return null; // « Re: devis » est trop vague pour conclure
+  const depuis = new Date(Date.now() - 14 * 86_400_000).toISOString();
+  const lignes = verifier(
+    await sb
+      .from('secretariat_journal')
+      .select('sujet, expediteur_adresse, intervention_id')
+      .not('intervention_id', 'is', null)
+      .gte('recu_le', depuis)
+      .order('recu_le', { ascending: false }),
+    'Recherche fil (sujet)'
+  ) as { sujet: string; expediteur_adresse: string; intervention_id: number }[];
+  const interne = (a: string) => estInterne(a, internes);
+  const moi = mail.deAdresse.toLowerCase();
+  for (const l of lignes ?? []) {
+    if (sujetSansPrefixe(l.sujet) !== base) continue;
+    if (l.expediteur_adresse !== moi && !interne(moi) && !interne(l.expediteur_adresse)) continue;
+    const i = await interventionParId(l.intervention_id);
+    if (i && i.statut !== 'realisee' && i.statut !== 'annulee') return i;
+  }
+  return null;
 }
 
 /** Dernière demande du même expéditeur encore en attente de coordonnées (15 jours). À n'utiliser
