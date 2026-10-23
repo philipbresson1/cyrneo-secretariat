@@ -18,6 +18,7 @@ const DEFAUTS = {
   modele: 'claude-opus-5-5',
   dolibarr: { actif: false, url: '', entites: {} },
   ecran: { colonnes: [] },
+  heuresOuvrees: { debut: '08:00', fin: '18:00' },
 } as const;
 
 export function validerConfig(brut: unknown): Config {
@@ -59,6 +60,7 @@ export function validerConfig(brut: unknown): Config {
       if (!Number.isInteger(n) || n < 1) erreurs.push(`dolibarr.entites.${s} : numéro d'entité entier attendu`);
     }
   }
+  if (!/^\d{1,2}:\d{2}$/.test(c.heuresOuvrees.debut) || !/^\d{1,2}:\d{2}$/.test(c.heuresOuvrees.fin)) erreurs.push('heuresOuvrees : debut et fin au format HH:MM');
   if (!/^\d{1,2}:\d{2}$/.test(c.rapport.heure)) erreurs.push('rapport.heure au format HH:MM');
 
   // Société sans numéro : les mails clients donnent celui du groupe, jamais un trou.

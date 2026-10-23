@@ -2,6 +2,7 @@
   "mode": "simulation",
   "intervalleMinutes": 2,
   "repriseHeures": 24,
+  "heuresOuvrees": { "debut": "08:00", "fin": "18:00" },
   "modele": "claude-opus-5-5",
   "domainesInternes": [
     "groupecyrneo.com",

@@ -5,6 +5,7 @@ import { lireClassification, pdfALire } from './classification';
 import { decider, type Contexte } from './decision';
 import { accuseIntervention, coordonneesManquantes, demandeCoordonnees, estProfessionnel, messageRainbow, referenceIntervention } from './modeles';
 import { validerConfig } from './config';
+import { horsHeuresOuvrees, joursFeries, paques } from './horaires';
 import type { Classification, Config, Intervention, MailRecu } from './types';
 import exemple from '../../config.exemple.json';
 
@@ -237,6 +238,23 @@ describe('modèles de messages', () => {
   it('le message Rainbow signale l’urgence', () => {
     expect(messageRainbow(mail(), classification(), s, 'INT-2026-0001', 'À rappeler.')).toMatch(/^🚨 URGENT/);
     expect(referenceIntervention(42, 'devis', 2026)).toBe('DEV-2026-0042');
+  });
+});
+
+describe('heures d’astreinte', () => {
+  const h = { debut: '08:00', fin: '18:00' };
+  it('calcule Pâques et les fériés mobiles', () => {
+    expect(paques(2026).toISOString().slice(0, 10)).toBe('2026-04-05');
+    expect([...joursFeries(2026)]).toEqual(expect.arrayContaining(['2026-04-06', '2026-05-14', '2026-05-25', '2026-11-11']));
+  });
+  it('heures ouvrées en semaine, astreinte sinon (heure de Paris)', () => {
+    expect(horsHeuresOuvrees(new Date('2026-10-22T08:30:00Z'), h)).toBe(false); // jeudi 10h30
+    expect(horsHeuresOuvrees(new Date('2026-10-22T15:59:00Z'), h)).toBe(false); // jeudi 17h59
+    expect(horsHeuresOuvrees(new Date('2026-10-22T16:00:00Z'), h)).toBe(true); // jeudi 18h00
+    expect(horsHeuresOuvrees(new Date('2026-10-22T05:30:00Z'), h)).toBe(true); // jeudi 7h30
+    expect(horsHeuresOuvrees(new Date('2026-10-24T10:00:00Z'), h)).toBe(true); // samedi
+    expect(horsHeuresOuvrees(new Date('2026-11-11T10:00:00Z'), h)).toBe(true); // 11 novembre (mercredi)
+    expect(horsHeuresOuvrees(new Date('2026-12-15T07:30:00Z'), h)).toBe(false); // mardi 8h30, heure d'hiver
   });
 });
 

@@ -49,7 +49,7 @@ export type Societe = {
   telephone: string;
   site: string;
   bulleRainbow: string; // nom exact de la bulle Rainbow
-  bulleUrgence?: string; // bulle dédiée aux demandes urgentes, si la société en a une
+  bulleUrgence?: string; // bulle d'astreinte : demandes d'intervention hors heures ouvrées
   delaiRappel: string; // ex. « dans la journée »
   delaiDevis: string; // ex. « sous 48 h »
   alerteSecours: string[]; // adresses prévenues par mail si Rainbow est indisponible
@@ -90,6 +90,7 @@ export type Config = {
   dolibarr: { actif: boolean; url: string; entites: Record<string, number> };
   /** Colonnes de planning de l'écran d'accueil ; chacune regroupe un ou plusieurs agendas (icsEnv). */
   ecran: { colonnes: { titre: string; agendas: string[] }[] };
+  heuresOuvrees: { debut: string; fin: string };
 };
 
 export type PieceJointe = { nom: string; type: string; taille: number; contenu: Buffer };

@@ -3,6 +3,7 @@
  */
 import type { ActionExecutee, Boite, Classification, Config, Intervention, MailRecu, Societe } from './logique/types';
 import { raisonDeNePasRepondre } from './logique/garde-fous';
+import { horsHeuresOuvrees } from './logique/horaires';
 import { decider, fusionnerContact, societeRetenue } from './logique/decision';
 import {
   accuseDevis,
@@ -109,8 +110,11 @@ export async function traiterMail(mail: MailRecu, boite: Boite, config: Config):
             : a.gabarit === 'relance' || a.gabarit === 'reclamation'
               ? messageRainbowRelance(mail, classification, s, a.gabarit === 'reclamation' ? `${classification.urgence === 'urgente' ? '🚨' : '⚠️'} Réclamation ${intervention?.reference ?? ''}`.trim() : undefined)
               : messageRainbow(mail, classification, s, ref, a.suite);
-        const bulle =
-          config.mode === 'test' ? config.test.bulleRainbow : classification.urgence === 'urgente' && s.bulleUrgence ? s.bulleUrgence : s.bulleRainbow;
+        // Astreinte : une demande d'intervention reçue le soir, la nuit, le week-end ou un jour
+        // férié part dans la bulle d'urgence ; tout le reste dans la bulle habituelle.
+        const demandeIntervention = (a.gabarit === 'nouvelle' || a.gabarit === 'complement') && (intervention?.type ?? 'intervention') === 'intervention';
+        const astreinte = !!s.bulleUrgence && demandeIntervention && horsHeuresOuvrees(mail.recuLe, config.heuresOuvrees);
+        const bulle = config.mode === 'test' ? config.test.bulleRainbow : astreinte ? s.bulleUrgence! : s.bulleRainbow;
         await executer('rainbow', simulation, `bulle « ${bulle} »`, async () => {
           try {
             await publier(bulle, texte);
