@@ -99,6 +99,7 @@ export async function traiterMail(mail: MailRecu, boite: Boite, config: Config):
   let fichiers: string[] = [];
   const envoisANoter: { type: string; destinataire: string; sujet: string; messageId: string | null }[] = [];
 
+  let bonAFaire: string | null = null; // BI que le secrétariat n'a pas pu créer, et pourquoi
   // Tiers Dolibarr de la demande, cherché une seule fois (Rainbow puis bon d'intervention).
   let reconnu: TiersReconnu | null | undefined;
   async function tiers(): Promise<TiersReconnu | null> {
@@ -161,6 +162,9 @@ export async function traiterMail(mail: MailRecu, boite: Boite, config: Config):
               : messageRainbow(mail, classification, s, ref, a.suite);
         const r = a.gabarit !== 'vehicule' && intervention ? await tiers() : null;
         if (r && r.index.tiers.size > 0) texte += `\n${blocRainbow(r)}`; // copie pas encore faite : rien à dire
+        // Le BI des demandes reçues par mail est fait par le secrétariat : le bureau n'en refait pas.
+        if (intervention?.dolibarr_ref) texte += `\n🧾 BI ${intervention.dolibarr_ref} créé (brouillon), inutile d'en refaire un`;
+        else if (bonAFaire) texte += `\n⚠️ BI à faire dans Dolibarr : ${bonAFaire}`;
         const bulle = choisirBulle(config, s, {
           gabarit: a.gabarit,
           type: intervention?.type ?? 'intervention',
@@ -228,12 +232,16 @@ export async function traiterMail(mail: MailRecu, boite: Boite, config: Config):
         await executer('bon_dolibarr', config.mode !== 'reel', `bon d'intervention ${s.nom}`, async () => {
           const r = await tiers();
           // Jamais de tiers créé automatiquement : sans tiers reconnu, le bureau fait le bon.
-          if (!r?.tiers) throw new Error('tiers non reconnu avec certitude, bon à faire à la main');
+          if (!r?.tiers) {
+            bonAFaire = 'tiers non reconnu avec certitude';
+            throw new Error('tiers non reconnu avec certitude, bon à faire à la main');
+          }
           const entite = entiteDe(config, inter.societe);
           const bon = await creerBonIntervention(config, entite, r.tiers.id, classification, inter.reference);
           intervention = await db.majIntervention(inter.id, { dolibarr_ref: bon.ref, dolibarr_id: bon.id, dolibarr_entite: entite });
           return `${bon.ref} (brouillon) pour ${r.tiers.nom}`;
         });
+        if (config.mode === 'reel' && !intervention?.dolibarr_ref) bonAFaire ??= 'Dolibarr a refusé la création (voir le journal)';
         break;
       }
       case 'transferer': {
