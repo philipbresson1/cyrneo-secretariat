@@ -26,7 +26,7 @@ import { classer } from './services/classifieur';
 import { genererRapport } from './services/rapport-excel';
 import { envoyer } from './services/smtp';
 import { arreter as arreterRainbow, listerBulles } from './services/rainbow';
-import { listerEntites, nomEntite } from './services/dolibarr';
+import { listerEntites, verifierDroits } from './services/dolibarr';
 import { envoyerRappels, type BilanRappels } from './services/rappels';
 import { demarrerServeur, type Etat } from './services/serveur';
 import { ecrireCurseur, lireCurseur, noterEnvoi, testerBase } from './services/stockage';
@@ -286,20 +286,23 @@ async function principal() {
       return;
     case 'dolibarr': {
       console.log(`Dolibarr : ${config.dolibarr.url}\n`);
+      let noms = new Map<number, string>();
       try {
         const entites = await listerEntites(config);
         if (entites) {
           console.log('Sociétés déclarées dans Dolibarr (numéro d’entité → nom) :');
           for (const x of entites) console.log(`  ${x.id} → ${x.nom}`);
+          noms = new Map(entites.map((x) => [x.id, x.nom]));
           console.log('');
         }
       } catch (e) {
         console.log(`✗ Connexion Dolibarr : ${e instanceof Error ? e.message : String(e)}\n`);
       }
-      // Affiche le nom de chaque entité : c'est ce qui permet de vérifier la correspondance société ↔ numéro.
+      // Nom de l'entité en face de chaque société : c'est ce qui permet de vérifier la correspondance.
       for (const [societe, entite] of Object.entries(config.dolibarr.entites)) {
         try {
-          console.log(`✓ ${societe} → entité ${entite} : « ${await nomEntite(config, entite)} »`);
+          await verifierDroits(config, entite);
+          console.log(`✓ ${societe} → entité ${entite} « ${noms.get(entite) ?? '?'} » : tiers et interventions accessibles`);
         } catch (e) {
           console.log(`✗ ${societe} → entité ${entite} : ${e instanceof Error ? e.message : String(e)}`);
         }

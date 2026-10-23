@@ -62,10 +62,17 @@ async function appel<T>(config: Config, entite: number, methode: 'GET' | 'POST',
   return (texte ? JSON.parse(texte) : null) as T;
 }
 
-/** Nom de la société configurée dans l'entité : sert à vérifier la connexion et le numéro d'entité. */
-export async function nomEntite(config: Config, entite: number): Promise<string> {
-  const societe = await appel<{ name?: string; nom?: string }>(config, entite, 'GET', '/setup/company');
-  return societe.name ?? societe.nom ?? '(sans nom)';
+/** Vérifie les droits du compte API dans une entité : lecture des tiers et des interventions.
+ *  (/setup/company serait plus parlant, mais Dolibarr le réserve aux administrateurs.) */
+export async function verifierDroits(config: Config, entite: number): Promise<void> {
+  for (const chemin of ['/thirdparties?limit=1', '/interventions?limit=1']) {
+    try {
+      await appel(config, entite, 'GET', chemin);
+    } catch (e) {
+      // 404 : liste vide, l'accès est bon.
+      if (!(e instanceof ErreurDolibarr && e.statut === 404)) throw e;
+    }
+  }
 }
 
 /** Entités du module Multi-société, si son API est disponible : id et nom de chaque société.
