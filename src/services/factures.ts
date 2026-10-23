@@ -17,7 +17,7 @@ export async function lireFacture(config: Config, pdf: PieceJointe): Promise<Fac
   anthropic ??= new Anthropic();
   const reponse = await anthropic.messages.create({
     model: config.modele,
-    max_tokens: 3000,
+    max_tokens: 16000, // factures longues (relevés carburant, pièces) : toutes les lignes
     output_config: { effort: 'low', format: { type: 'json_schema', schema: schemaFacture(config.societes) } },
     system: consignesFacture(config.societes),
     messages: [

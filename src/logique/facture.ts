@@ -1,11 +1,13 @@
 /**
- * Factures fournisseurs reçues par mail : lecture du PDF, contrôles, rapprochement du
- * fournisseur avec la liste des tiers Dolibarr.
+ * Factures fournisseurs reçues par mail : lecture du PDF (toutes les lignes), contrôles,
+ * rapprochement du fournisseur avec la liste des tiers Dolibarr.
  */
 import type { Societe } from './types';
 import { mots, type IndexTiers, type Tiers } from './tiers';
 
 export type FournisseurLu = { nom: string; siret: string; tvaIntra: string; adresse: string; cp: string; ville: string; email: string; telephone: string };
+
+export type LigneFacture = { description: string; quantite: number; prixUnitaireHt: number; remisePct: number; tauxTva: number; totalHt: number };
 
 export type FactureLue = {
   estFactureFournisseur: boolean; // false : devis, relance, facture émise par une de nos sociétés…
@@ -16,7 +18,7 @@ export type FactureLue = {
   date: string; // AAAA-MM-JJ
   echeance: string; // AAAA-MM-JJ ou ''
   libelle: string;
-  ventilation: { taux: number; ht: number }[]; // HT par taux de TVA
+  lignes: LigneFacture[]; // toutes les lignes de la facture, telles qu'imprimées
   totalHt: number;
   totalTva: number;
   totalTtc: number;
@@ -42,15 +44,20 @@ export function schemaFacture(societes: Societe[]) {
       date: CHAINE,
       echeance: CHAINE,
       libelle: CHAINE,
-      ventilation: {
+      lignes: {
         type: 'array',
-        items: { type: 'object', properties: { taux: NOMBRE, ht: NOMBRE }, required: ['taux', 'ht'], additionalProperties: false },
+        items: {
+          type: 'object',
+          properties: { description: CHAINE, quantite: NOMBRE, prixUnitaireHt: NOMBRE, remisePct: NOMBRE, tauxTva: NOMBRE, totalHt: NOMBRE },
+          required: ['description', 'quantite', 'prixUnitaireHt', 'remisePct', 'tauxTva', 'totalHt'],
+          additionalProperties: false,
+        },
       },
       totalHt: NOMBRE,
       totalTva: NOMBRE,
       totalTtc: NOMBRE,
     },
-    required: ['estFactureFournisseur', 'avoir', 'fournisseur', 'societe', 'numero', 'date', 'echeance', 'libelle', 'ventilation', 'totalHt', 'totalTva', 'totalTtc'],
+    required: ['estFactureFournisseur', 'avoir', 'fournisseur', 'societe', 'numero', 'date', 'echeance', 'libelle', 'lignes', 'totalHt', 'totalTva', 'totalTtc'],
     additionalProperties: false,
   };
 }
@@ -66,7 +73,8 @@ export function consignesFacture(societes: Societe[]): string {
     "societe : la société du groupe facturée (destinataire de la facture), 'inconnue' si on ne peut pas le dire.",
     "numero : le numéro de la facture tel qu'imprimé. date et echeance au format AAAA-MM-JJ (echeance vide si absente).",
     "libelle : l'objet de la facture en quelques mots (ex. « Gasoil octobre », « Pièces camion IVECO »).",
-    "ventilation : le total HT par taux de TVA (taux en %, ex. 20, 10, 2.1, 0). Une seule entrée si un seul taux.",
+    "lignes : TOUTES les lignes de la facture, dans l'ordre, sans en sauter ni en regrouper : description complète (référence article comprise), quantité, prix unitaire HT, remise en % (0 si aucune), taux de TVA en % (ex. 20, 10, 5.5, 2.1, 0), total HT de la ligne. " +
+      "Les frais de port, éco-participations, consignes et remises globales imprimés comme des lignes sont aussi des lignes (remise globale : quantité 1, prix négatif).",
     'totalHt, totalTva, totalTtc : les totaux imprimés, en euros. Ne calcule rien qui ne soit écrit, n\'invente rien.',
   ].join('\n');
 }
@@ -80,13 +88,28 @@ export function controlerFacture(f: FactureLue, societes: Societe[]): string | n
   if (!f.numero.trim()) return 'numéro de facture illisible';
   if (!/^\d{4}-\d{2}-\d{2}$/.test(f.date)) return 'date illisible';
   if (!f.fournisseur.nom.trim()) return 'fournisseur illisible';
-  if (f.ventilation.length === 0) return 'montants illisibles';
+  if (f.lignes.length === 0) return 'lignes illisibles';
   if (Math.abs(arrondi(f.totalHt + f.totalTva) - f.totalTtc) > 0.05) return `totaux incohérents (HT ${f.totalHt} + TVA ${f.totalTva} ≠ TTC ${f.totalTtc})`;
-  const somme = f.ventilation.reduce((t, v) => t + v.ht, 0);
-  if (Math.abs(arrondi(somme) - f.totalHt) > 0.05) return `ventilation HT (${arrondi(somme)}) différente du total HT (${f.totalHt})`;
-  const tva = f.ventilation.reduce((t, v) => t + (v.ht * v.taux) / 100, 0);
-  if (Math.abs(arrondi(tva) - f.totalTva) > Math.max(0.05, f.ventilation.length * 0.02)) return `TVA recalculée (${arrondi(tva)}) différente de la TVA imprimée (${f.totalTva})`;
+  const tolerance = Math.max(0.05, f.lignes.length * 0.01);
+  // Chaque ligne telle que Dolibarr la recalculera (quantité × prix × remise).
+  for (const [i, l] of f.lignes.entries()) {
+    const calcule = arrondi(l.quantite * l.prixUnitaireHt * (1 - l.remisePct / 100));
+    // Petit écart = prix unitaire arrondi à l'impression : corrigé par prixUnitaireSaisi.
+    if (Math.abs(calcule - l.totalHt) > Math.max(0.05, Math.abs(l.totalHt) * 0.01)) return `ligne ${i + 1} incohérente (${l.quantite} × ${l.prixUnitaireHt} ≠ ${l.totalHt})`;
+  }
+  const somme = f.lignes.reduce((t, l) => t + l.totalHt, 0);
+  if (Math.abs(arrondi(somme) - f.totalHt) > tolerance) return `somme des lignes (${arrondi(somme)}) différente du total HT (${f.totalHt}) : ligne manquante ?`;
+  const tva = f.lignes.reduce((t, l) => t + (l.totalHt * l.tauxTva) / 100, 0);
+  if (Math.abs(arrondi(tva) - f.totalTva) > tolerance) return `TVA recalculée (${arrondi(tva)}) différente de la TVA imprimée (${f.totalTva})`;
   return null;
+}
+
+/** Prix unitaire à saisir pour que Dolibarr retombe sur le total HT imprimé de la ligne
+ *  (le prix imprimé est souvent arrondi : 800 L × 1,253 €). */
+export function prixUnitaireSaisi(l: LigneFacture): number {
+  const diviseur = l.quantite * (1 - l.remisePct / 100);
+  if (!diviseur) return l.prixUnitaireHt;
+  return Math.abs(arrondi(l.quantite * l.prixUnitaireHt * (1 - l.remisePct / 100)) - l.totalHt) <= 0.005 ? l.prixUnitaireHt : Math.round((l.totalHt / diviseur) * 1e5) / 1e5;
 }
 
 const chiffresSeuls = (s: string) => s.replace(/\D/g, '');
@@ -118,5 +141,5 @@ const euros = (n: number) => n.toLocaleString('fr-FR', { minimumFractionDigits: 
 
 export function resumeFacture(f: FactureLue, societes: Societe[]): string {
   const s = societes.find((x) => x.id === f.societe)?.nom ?? 'société ?';
-  return `${f.avoir ? 'Avoir' : 'Facture'} ${f.numero || '?'} · ${f.fournisseur.nom || 'fournisseur ?'} → ${s} · ${euros(f.totalTtc)} TTC${f.libelle ? ` · ${f.libelle}` : ''}`;
+  return `${f.avoir ? 'Avoir' : 'Facture'} ${f.numero || '?'} · ${f.fournisseur.nom || 'fournisseur ?'} → ${s} · ${euros(f.totalTtc)} TTC${f.libelle ? ` · ${f.libelle}` : ''} · ${f.lignes.length} ligne${f.lignes.length > 1 ? 's' : ''}`;
 }

@@ -11,7 +11,7 @@
  */
 import type { Classification, Config } from '../logique/types';
 import type { ContactTiers, Tiers } from '../logique/tiers';
-import type { FactureLue, FournisseurLu } from '../logique/facture';
+import { prixUnitaireSaisi, type FactureLue, type FournisseurLu } from '../logique/facture';
 
 export type BonDolibarr = { id: number; ref: string };
 
@@ -266,7 +266,7 @@ export async function factureFournisseurExiste(config: Config, entite: number, s
 
 const horodatage = (jour: string) => Math.floor(new Date(`${jour}T12:00:00Z`).getTime() / 1000);
 
-/** Facture fournisseur en brouillon (une ligne par taux de TVA), PDF joint. */
+/** Facture fournisseur en brouillon, avec toutes ses lignes, PDF joint. */
 export async function creerFactureFournisseur(
   config: Config,
   entite: number,
@@ -285,13 +285,14 @@ export async function creerFactureFournisseur(
       note_private: 'Saisie automatique du secrétariat CYRNEO depuis le PDF reçu par mail : à vérifier avant validation.',
     })
   );
-  for (const v of f.ventilation) {
+  for (const l of f.lignes) {
     await appel(config, entite, 'POST', `/supplierinvoices/${id}/lines`, {
-      description: f.libelle || `Facture ${f.numero}`,
-      pu_ht: v.ht,
-      qty: 1,
-      tva_tx: v.taux,
-      product_type: 1,
+      description: l.description,
+      pu_ht: prixUnitaireSaisi(l),
+      qty: l.quantite,
+      remise_percent: l.remisePct,
+      tva_tx: l.tauxTva,
+      product_type: 0,
     });
   }
   const facture = await appel<{ ref?: string }>(config, entite, 'GET', `/supplierinvoices/${id}`);
