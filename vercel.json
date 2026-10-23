@@ -3,6 +3,6 @@
   "framework": null,
   "buildCommand": "",
   "rewrites": [{ "source": "/(.*)", "destination": "/api/index" }],
-  "functions": { "api/index.ts": { "maxDuration": 30, "includeFiles": "assets/signature/**" } },
+  "functions": { "api/index.ts": { "maxDuration": 30, "includeFiles": "assets/{signature,app}/**" } },
   "regions": ["fra1"]
 }

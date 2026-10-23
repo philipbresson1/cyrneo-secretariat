@@ -12,7 +12,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { Config, Intervention, StatutIntervention } from '../logique/types';
 import { LIBELLES_CATEGORIES, type Categorie } from '../logique/types';
-import { decalageParis, estWeekEnd, rdvDuJour, titreComparable, type Rdv } from '../lib/agenda';
+import { decalageParis, estWeekEnd, jourParis as jourParisCle, rdvDuJour, titreComparable, type Rdv } from '../lib/agenda';
 import { chercherJournal, creerInterventionManuelle, dernieresRealisees, historiqueInterventions, interventionsEntre, interventionsOuvertes, majIntervention, type NouvelleDemande } from './stockage';
 
 export type Etat = { demarreLe: Date; dernierPassage: Date | null; erreurs: string[]; mode: string };
@@ -34,7 +34,12 @@ const fmtJour = new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', wee
 const fmtComplet = new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
 
 // --- Agendas : relus au plus toutes les 5 minutes -------------------------------
-type AgendaLu = { env: string; nom: string; couleur: string; aujourdhui: Rdv[]; demain: Rdv[]; semaine: { date: Date; rdvs: Rdv[] }[]; erreur: string | null };
+/** 0 le lundi … 6 le dimanche, à Paris. */
+function joursDepuisLundi(d: Date): number {
+  return ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].indexOf(new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Paris', weekday: 'short' }).format(d));
+}
+
+type AgendaLu = { env: string; nom: string; couleur: string; aujourdhui: Rdv[]; demain: Rdv[]; periode: { date: Date; rdvs: Rdv[] }[]; erreur: string | null };
 let cacheAgendas: { lu: number; agendas: AgendaLu[] } | null = null;
 
 async function lireAgendas(config: Config): Promise<AgendaLu[]> {
@@ -44,20 +49,23 @@ async function lireAgendas(config: Config): Promise<AgendaLu[]> {
   const agendas = await Promise.all(
     config.agendas.map(async (a): Promise<AgendaLu> => {
       const url = process.env[a.icsEnv];
-      if (!url) return { env: a.icsEnv, nom: a.nom, couleur: a.couleur, aujourdhui: [], demain: [], semaine: [], erreur: `variable ${a.icsEnv} absente` };
+      if (!url) return { env: a.icsEnv, nom: a.nom, couleur: a.couleur, aujourdhui: [], demain: [], periode: [], erreur: `variable ${a.icsEnv} absente` };
       try {
         const r = await fetch(url);
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const ics = await r.text();
-        // Sept jours glissants : vue hebdo des chantiers (sociétés du bâtiment).
-        const semaine = Array.from({ length: 7 }, (_, n) => {
-          const date = new Date(maintenant.getTime() + n * 86_400_000);
-          return { date, rdvs: n === 0 ? rdvDuJour(ics, maintenant) : rdvDuJour(ics, date).map((x) => ({ ...x, passe: false })) };
+        // Gantt des chantiers (bâtiment) : du lundi de cette semaine à la fin de la suivante ; à
+        // partir du vendredi, une semaine de plus pour toujours voir loin devant.
+        const depuisLundi = joursDepuisLundi(maintenant);
+        const lundi = new Date(maintenant.getTime() - depuisLundi * 86_400_000);
+        const periode = Array.from({ length: depuisLundi >= 4 ? 21 : 14 }, (_, n) => {
+          const date = new Date(lundi.getTime() + n * 86_400_000);
+          return { date, rdvs: rdvDuJour(ics, date) };
         });
-        return { env: a.icsEnv, nom: a.nom, couleur: a.couleur, aujourdhui: semaine[0].rdvs, demain: semaine[1].rdvs, semaine, erreur: null };
+        return { env: a.icsEnv, nom: a.nom, couleur: a.couleur, aujourdhui: rdvDuJour(ics, maintenant), demain: rdvDuJour(ics, demain).map((x) => ({ ...x, passe: false })), periode, erreur: null };
       } catch {
         // Jamais l'URL dans le message : elle donne un accès permanent à l'agenda.
-        return { env: a.icsEnv, nom: a.nom, couleur: a.couleur, aujourdhui: [], demain: [], semaine: [], erreur: 'agenda injoignable' };
+        return { env: a.icsEnv, nom: a.nom, couleur: a.couleur, aujourdhui: [], demain: [], periode: [], erreur: 'agenda injoignable' };
       }
     })
   );
@@ -92,9 +100,43 @@ button{background:#2563eb;border-color:#2563eb;cursor:pointer}.vide{color:var(--
 .filtres a{margin-right:.8rem}
 `;
 
+/** Webapp : installable (« Ajouter à l'écran d'accueil »), s'ouvre sans barre de navigateur. */
+const TETE_APPLI =
+  '<link rel="manifest" href="/manifest.webmanifest"><meta name="theme-color" content="#0b1526"><link rel="apple-touch-icon" href="/app/apple-touch-icon.png">' +
+  '<meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Cyrnehome">' +
+  "<script>if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{})</script>";
+
+const MANIFESTE = JSON.stringify({
+  name: 'Cyrnehome · Groupe CYRNEO',
+  short_name: 'Cyrnehome',
+  start_url: '/bureau',
+  scope: '/',
+  display: 'standalone',
+  background_color: '#0b1526',
+  theme_color: '#0b1526',
+  lang: 'fr',
+  icons: [
+    { src: '/app/icone-192.png', sizes: '192x192', type: 'image/png' },
+    { src: '/app/icone-512.png', sizes: '512x512', type: 'image/png' },
+    { src: '/app/icone-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+  ],
+  shortcuts: [
+    { name: 'Admin', url: '/bureau' },
+    { name: 'Tableau agents', url: '/equipes' },
+    { name: 'Travaux', url: '/travaux' },
+    { name: 'Historique', url: '/interventions' },
+  ],
+});
+
+// Toujours le réseau (les écrans doivent être à jour) ; hors ligne, une page d'attente.
+const SERVICE_WORKER = `self.addEventListener('install',()=>self.skipWaiting());
+self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));
+self.addEventListener('fetch',e=>{if(e.request.mode!=='navigate')return;
+e.respondWith(fetch(e.request).catch(()=>new Response('<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width"><body style="background:#0b1526;color:#f1f5f9;font-family:system-ui;padding:2rem"><h1>Cyrnehome</h1><p>Pas de connexion. La page se rechargera dès le retour du réseau.</p><script>addEventListener("online",()=>location.reload())</script>',{headers:{'Content-Type':'text/html; charset=utf-8'}})));});`;
+
 function page(titre: string, corps: string, rafraichir = 0): string {
   return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-${rafraichir ? `<meta http-equiv="refresh" content="${rafraichir}">` : ''}<title>${e(titre)}</title><style>${STYLE}</style></head><body>${corps}</body></html>`;
+${rafraichir ? `<meta http-equiv="refresh" content="${rafraichir}">` : ''}${TETE_APPLI}<title>${e(titre)}</title><style>${STYLE}</style></head><body>${corps}</body></html>`;
 }
 
 /** « 2026-10-23T09:00 » en heure de Paris, pour un champ datetime-local. */
@@ -171,7 +213,20 @@ section h2 small{font-size:.85rem;color:var(--doux);font-weight:500;white-space:
 .rdv .ag{color:var(--doux);font-size:.75rem}
 .sep{color:var(--doux);font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;margin:.5rem 0 .1rem}
 .plus{color:var(--doux);font-style:italic;padding:.2rem .5rem}
-.jusqua{color:#fbbf24;font-size:.8em;white-space:nowrap}
+main.btp{grid-template-columns:1fr 20rem}
+.gantt{padding:.6rem .7rem}
+.g-defile{display:flex;flex-direction:column;min-height:0;flex:1}
+.g-corps{gap:.25rem}
+.g-ligne{display:grid;grid-template-columns:14rem repeat(var(--n),1fr);align-items:center;min-height:2.3rem}
+.g-entete{min-height:2.4rem;border-bottom:1px solid var(--ligne);margin-bottom:.3rem}
+.g-jour{text-align:center;font-size:.85rem;font-weight:600;line-height:1.1;display:flex;flex-direction:column;align-items:center;color:var(--doux);text-transform:capitalize}
+.g-jour small{font-size:.65rem;font-weight:500;text-transform:uppercase}.g-jour.we{opacity:.55}.g-jour.auj{color:#fff;font-weight:700;background:#1d4ed8;border-radius:6px}
+.g-nom{grid-column:1;grid-row:1;padding-right:.6rem;font-size:.9rem;line-height:1.15;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.case{align-self:stretch;border-left:1px solid #1b2c47}.case.we{background:#0f1c31}.case.auj{background:#16305a}
+.g-barre{z-index:1;align-self:center;margin:0 1px;padding:.2rem .1rem;border-radius:6px;background:var(--c);color:#fff;font-size:.78rem;text-align:center;font-weight:600;overflow:hidden;white-space:nowrap;text-overflow:clip;box-shadow:inset 0 0 0 1px rgba(255,255,255,.15)}
+.g-barre.encours{box-shadow:0 0 0 2px #fbbf24}
+.g-ligne.fini{opacity:.4}
+.g-societe{display:flex;align-items:center;gap:.5rem;font-weight:700;font-size:1.05rem;margin:.6rem 0 .2rem}.g-societe small{color:var(--doux);font-weight:500}
 .vide{color:var(--doux);font-style:italic}
 .bon{padding:.45rem .6rem;border-left:5px solid var(--ok);background:#0d1a2e;border-radius:6px;line-height:1.25}
 .bon.urgente{border-color:var(--urgent);background:#2a1418}.bon.attente{border-color:var(--attente)}
@@ -233,6 +288,7 @@ main,main.cahier,main.equipes{display:flex;flex-direction:column;padding:.6rem;g
 .appel>span:nth-child(n+3){grid-column:2}
 .appel .quoi,.appel .ou,.appel .qui{white-space:normal}
 section h2{flex-wrap:wrap;gap:.3rem}section h2 small{white-space:normal}
+.gantt{overflow-x:auto}.g-defile{min-width:900px}
 }
 .fait .ck{color:var(--ok);font-weight:900}.fait .qui{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.fait small{color:var(--doux);white-space:nowrap}
 `;
@@ -270,46 +326,60 @@ function colonnePlanning(titre: string, agendas: AgendaLu[], maintenant: number,
   }${demain.length ? `<div class="sep">Demain · ${demain.length}</div>${demain.map((x) => ligneRdv(x.r, x.a, plusieurs, maintenant)).join('')}` : ''}</div></section>`;
 }
 
-const fmtJourCourt = new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', weekday: 'short', day: 'numeric' });
-const fmtJourLong = new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', weekday: 'long', day: 'numeric', month: 'long' });
+const fmtInitiale = new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', weekday: 'short' });
+const fmtNumero = new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', day: 'numeric' });
 
-/** Planning de la semaine (sept jours glissants) : un chantier qui dure plusieurs jours — même
- *  événement, ou même intitulé repris jour après jour — n'apparaît qu'une fois, le jour où il
- *  commence, avec sa date de fin. */
-function colonneSemaine(titre: string, agendas: AgendaLu[], maintenant: number, societe = ''): string {
-  type Bloc = { r: Rdv; a: AgendaLu; premier: number; dernier: number };
-  const blocs: Bloc[] = [];
-  const jours = agendas[0]?.semaine.map((j) => j.date) ?? [];
+type Chantier = { r: Rdv; a: AgendaLu; premier: number; dernier: number };
+
+/** Chantiers de la période : un même événement sur plusieurs jours, ou le même intitulé repris
+ *  jour après jour (week-end sans travaux compris), ne fait qu'un chantier. */
+function chantiers(agendas: AgendaLu[], jours: Date[]): Chantier[] {
+  const blocs: Chantier[] = [];
   for (let d = 0; d < jours.length; d++) {
     for (const a of agendas) {
-      for (const r of a.semaine[d]?.rdvs ?? []) {
-        // Suite d'un chantier : la veille, ou le vendredi pour un lundi (week-end sans travaux).
-        const continu = (b: Bloc) => b.dernier < d && jours.slice(b.dernier + 1, d).every(estWeekEnd);
+      for (const r of a.periode[d]?.rdvs ?? []) {
+        const continu = (b: Chantier) => b.dernier < d && jours.slice(b.dernier + 1, d).every(estWeekEnd);
         const suite = blocs.find((b) => continu(b) && (b.r.uid === r.uid || titreComparable(b.r.titre) === titreComparable(r.titre)));
         if (suite) suite.dernier = d;
         else if (!blocs.some((b) => b.dernier === d && b.r.uid === r.uid)) blocs.push({ r, a, premier: d, dernier: d });
       }
     }
   }
-  const plusieurs = agendas.length > 1;
-  const erreurs = agendas.filter((a) => a.erreur).map((a) => `<div class="alerte">${e(a.nom)} : ${e(a.erreur)}</div>`).join('');
-  const parJour = jours
-    .map((date, d) => {
-      const du = blocs.filter((b) => b.premier === d).sort((x, y) => (x.r.debut?.getTime() ?? 0) - (y.r.debut?.getTime() ?? 0));
-      if (!du.length) return '';
-      const libelle = d === 0 ? 'Aujourd’hui' : d === 1 ? 'Demain' : fmtJourLong.format(date);
-      return `<div class="sep">${e(libelle)}</div>${du
-        .map((b) => {
-          const duree = b.dernier > b.premier ? ` <span class="jusqua">→ ${e(b.dernier === jours.length - 1 ? 'toute la semaine' : fmtJourCourt.format(jours[b.dernier]))}</span>` : '';
-          // Un chantier qui continue les jours suivants n'est pas « passé » ce soir.
-          const r = b.dernier > b.premier ? { ...b.r, passe: false } : b.r;
-          return ligneRdv(r, b.a, plusieurs, maintenant).replace('</span></div>', `${duree}</span></div>`);
+  return blocs.sort((x, y) => x.premier - y.premier || (x.r.debut?.getTime() ?? 0) - (y.r.debut?.getTime() ?? 0));
+}
+
+/** Gantt des sociétés du bâtiment : deux semaines en colonnes, un chantier par ligne, groupés
+ *  par société ; on voit d'un coup d'œil ce qui est en cours et ce qui arrive. */
+function gantt(config: Config, ids: string[], agendas: AgendaLu[]): string {
+  const jours = agendas.find((a) => a.periode.length)?.periode.map((j) => j.date) ?? [];
+  if (!jours.length) return '<section class="gantt"><div class="vide">Plannings indisponibles</div></section>';
+  const auj = jours.findIndex((j) => jourParisCle(j) === jourParisCle(new Date()));
+  const cases = (ligne: number) =>
+    jours.map((j, d) => `<span class="case${estWeekEnd(j) ? ' we' : ''}${d === auj ? ' auj' : ''}" style="grid-row:${ligne};grid-column:${d + 2}"></span>`).join('');
+  const entete = `<div class="g-ligne g-entete"><span class="g-nom"></span>${jours
+    .map((j, d) => `<span class="g-jour${estWeekEnd(j) ? ' we' : ''}${d === auj ? ' auj' : ''}" style="grid-column:${d + 2}"><small>${e(fmtInitiale.format(j))}</small>${e(fmtNumero.format(j))}</span>`)
+    .join('')}</div>`;
+  const groupes = ids
+    .map((id) => {
+      const envs = config.agendas.filter((a) => a.societe === id).map((a) => a.icsEnv);
+      const siens = agendas.filter((a) => envs.includes(a.env));
+      if (!siens.length) return '';
+      const liste = chantiers(siens, jours);
+      const erreurs = siens.filter((a) => a.erreur).map((a) => `<div class="alerte">${e(a.nom)} : ${e(a.erreur)}</div>`).join('');
+      const lignes = liste
+        .map((c) => {
+          const fini = auj >= 0 && c.dernier < auj;
+          const enCours = auj >= c.premier && auj <= c.dernier;
+          // Le nom est à gauche ; la barre dit quand (heure d'un rendez-vous, ou fin du chantier).
+          const quand =
+            c.premier === c.dernier ? (c.r.debut ? fmtHeure.format(c.r.debut).replace(':00', 'h') : 'Jour') : `${fmtNumero.format(jours[c.premier])} → ${fmtNumero.format(jours[c.dernier])}`;
+          return `<div class="g-ligne${fini ? ' fini' : ''}"><span class="g-nom" title="${e(c.r.titre)}">${e(nettoyerTitre(c.r.titre))}</span>${cases(1)}<span class="g-barre${enCours ? ' encours' : ''}" style="grid-row:1;grid-column:${c.premier + 2} / ${c.dernier + 3};--c:${e(c.a.couleur)}">${e(quand)}</span></div>`;
         })
-        .join('')}`;
+        .join('');
+      return `<div class="g-societe">${logo(id, 'logo')} ${e(nomSociete(config, id))} <small>${liste.length} chantier${liste.length > 1 ? 's' : ''}</small></div>${erreurs}${lignes || '<div class="vide">Rien de prévu sur deux semaines</div>'}`;
     })
     .join('');
-  const chantiers = blocs.length;
-  return `<section><h2><span class="titre">${logo(societe, 'logo-col')}${e(titre)}</span> <small>${chantiers} cette semaine</small></h2><div class="liste">${erreurs}${parJour || '<div class="vide">Rien de prévu cette semaine</div>'}</div></section>`;
+  return `<section class="gantt" style="--n:${jours.length}"><div class="g-defile">${entete}<div class="liste g-corps">${groupes}</div></div></section>`;
 }
 
 /** « demandées » seulement si un mail est vraiment parti ; sinon, en simulation ou sans
@@ -342,7 +412,7 @@ function zoomDe(url: URL): number {
 
 function pageAffichage(config: Config, titre: string, sousTitre: string, contenu: string, zoom: number, base: string, chemin = ''): string {
   const corps = `<header><h1>${logo('cyrneo', '')}Groupe <span>CYRNEO</span> · ${e(sousTitre)}</h1><nav class="pages">${liensPages(config, chemin)}</nav><div id="h"></div></header>${contenu}<script>${SCRIPT_ECRAN}</script>`;
-  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="60"><title>${e(titre)}</title><style>${STYLE_ECRAN}html{font-size:calc(${base} * ${zoom})}</style></head><body>${corps}</body></html>`;
+  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="60">${TETE_APPLI}<title>${e(titre)}</title><style>${STYLE_ECRAN}html{font-size:calc(${base} * ${zoom})}</style></head><body>${corps}</body></html>`;
 }
 
 async function chargerBons(): Promise<{ bons: Intervention[]; erreur: string }> {
@@ -396,29 +466,18 @@ async function pageEquipes(config: Config, url: URL): Promise<string> {
   return pageAffichage(config, 'Planning équipes', 'Équipes', contenu, zoomDe(url), 'clamp(15px,1.3vw,36px)', '/equipes');
 }
 
-/** Une colonne de planning par société, avec tous ses agendas. */
-async function colonnesSocietes(config: Config, ids: string[]): Promise<string[]> {
-  const agendas = await lireAgendas(config);
-  const maintenant = Date.now();
-  return ids.flatMap((id) => {
-    const envs = config.agendas.filter((a) => a.societe === id).map((a) => a.icsEnv);
-    const lus = agendas.filter((a) => envs.includes(a.env));
-    return lus.length ? [colonneSemaine(nomSociete(config, id), lus, maintenant, id)] : [];
-  });
-}
-
-/** Écran des sociétés du bâtiment (bureau du conducteur de travaux, chef d'équipe) : leurs
- *  plannings de la semaine ; à droite les devis restant à faire, une liste par société. */
+/** Écran des sociétés du bâtiment (bureau du conducteur de travaux, chef d'équipe) : Gantt des
+ *  chantiers sur deux semaines ; à droite les devis restant à faire, une liste par société. */
 async function pageVue(config: Config, url: URL, vue: NonNullable<Config['ecran']['vues']>[number]): Promise<string> {
-  const [colonnes, ouvertes] = await Promise.all([colonnesSocietes(config, vue.societes), chargerOuvertes()]);
+  const [agendas, ouvertes] = await Promise.all([lireAgendas(config), chargerOuvertes()]);
   const devis = vue.societes.map((id) => {
     const l = ouvertes.bons.filter((i) => i.societe === id && i.type === 'devis');
     const contenu = ouvertes.erreur ? `<div class="alerte">${e(ouvertes.erreur)}</div>` : l.map((i) => ligneBon(config, i)).join('') || '<div class="vide">Aucun devis en attente</div>';
-    return `<section class="extensible"><h2><span class="titre">${logo(id, 'logo-col')}Devis à faire</span> <small>${e(nomSociete(config, id))} · ${l.length}</small></h2><div class="liste">${contenu}</div></section>`;
+    return `<section class="extensible"><h2><span class="titre">${logo(id, 'logo-col')}${e(nomSociete(config, id))}</span> <small>devis à faire · ${l.length}</small></h2><div class="liste">${contenu}</div></section>`;
   });
-  const contenu = `<main style="--cols:${colonnes.length}">${colonnes.join('')}<div class="cote">${devis.join('')}</div></main>`;
-  // En-tête court (les sociétés sont sur les colonnes) : l'horloge doit tenir sur la ligne.
-  return pageAffichage(config, vue.titre, vue.chemin.slice(1).replace(/^./, (c) => c.toUpperCase()), contenu, zoomDe(url), 'clamp(15px,1.3vw,36px)', vue.chemin);
+  const contenu = `<main class="btp">${gantt(config, vue.societes, agendas)}<div class="cote">${devis.join('')}</div></main>`;
+  // En-tête court (les sociétés sont dans le Gantt) : l'horloge doit tenir sur la ligne.
+  return pageAffichage(config, vue.titre, vue.chemin.slice(1).replace(/^./, (c) => c.toUpperCase()), contenu, zoomDe(url), 'clamp(14px,1.1vw,32px)', vue.chemin);
 }
 
 async function chargerOuvertes(): Promise<{ bons: Intervention[]; erreur: string }> {
@@ -634,6 +693,22 @@ export async function gererRequete(req: http.IncomingMessage, res: http.ServerRe
     if (ecrans[url.pathname]) {
       if (!config.serveur.ecranPublic && !autorise) return envoyer(401, pageCle(url));
       return envoyer(200, await ecrans[url.pathname](config, url), entetesCle);
+    }
+    if (url.pathname === '/manifest.webmanifest') {
+      res.writeHead(200, { 'Content-Type': 'application/manifest+json', 'Cache-Control': 'public, max-age=3600' });
+      res.end(MANIFESTE);
+      return;
+    }
+    if (url.pathname === '/sw.js') {
+      res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-cache' });
+      res.end(SERVICE_WORKER);
+      return;
+    }
+    const icone = /^\/app\/((?:icone-(?:192|512|maskable-512))|apple-touch-icon)\.png$/.exec(url.pathname);
+    if (icone) {
+      res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=604800' });
+      res.end(await readFile(path.resolve('assets/app', `${icone[1]}.png`)));
+      return;
     }
     const l = /^\/logos\/([a-z0-9-]+)\.png$/.exec(url.pathname);
     if (l && Object.values(LOGOS).includes(l[1])) {

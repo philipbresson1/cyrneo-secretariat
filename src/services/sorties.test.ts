@@ -65,9 +65,15 @@ describe('écran et pages locales', () => {
     expect(bureau).toContain('href="/bureau?vue=urgentes"');
     expect(bureau).toContain('devis à faire');
     for (const lien of ['/equipes', '/bureau', '/interventions', '/journal']) expect(bureau).toContain(`href="${lien}"`);
+    const manifeste = await (await fetch(`${base}/manifest.webmanifest`)).json();
+    expect(manifeste).toMatchObject({ short_name: 'Cyrnehome', display: 'standalone', start_url: '/bureau' });
+    expect((await fetch(`${base}/app/icone-512.png`)).headers.get('content-type')).toBe('image/png');
+    expect(await (await fetch(`${base}/sw.js`)).text()).toContain("addEventListener('fetch'");
+    expect(bureau).toContain('rel="manifest"');
     const travaux = await (await fetch(`${base}/travaux`)).text();
     expect(travaux).toContain('Sud Travaux · Entretien et Couleurs');
-    expect(travaux).toContain('Devis à faire');
+    expect(travaux).toContain('devis à faire');
+    expect(travaux).toContain('class="gantt"');
     expect(travaux).not.toContain('Jean &lt;Martin&gt;'); // inter de Sud Assainissement : pas sur cet écran
     expect(bureau).toContain('href="/travaux"');
     const urgentes = await (await fetch(`${base}/bureau?vue=urgentes&zoom=1.2`)).text();
