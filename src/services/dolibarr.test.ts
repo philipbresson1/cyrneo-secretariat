@@ -73,3 +73,11 @@ describe('connecteur Dolibarr', () => {
     );
   });
 });
+
+import { raisonRainbow } from './rainbow';
+describe('erreurs Rainbow', () => {
+  it('traduit « Wrong env for application id »', () => {
+    expect(raisonRainbow({ code: 401, error: { errorDetailsCode: 401700, errorDetails: 'Wrong env' } })).toMatch(/pas en production/);
+    expect(raisonRainbow({ code: 401, error: { errorDetailsCode: 401500, errorDetails: 'Invalid credentials' } })).toMatch(/refusés \(Invalid credentials\)/);
+  });
+});

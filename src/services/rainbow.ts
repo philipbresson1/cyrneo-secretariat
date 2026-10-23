@@ -23,6 +23,15 @@ function normaliser(nom: string): string {
   return nom.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
+/** Les erreurs du SDK sont des objets volumineux : on n'en garde que la cause utile. */
+export function raisonRainbow(e: unknown): string {
+  const x = (e ?? {}) as { code?: number; details?: string; error?: { errorDetailsCode?: number; errorDetails?: string } };
+  const code = x.error?.errorDetailsCode;
+  if (code === 401700) return "l'application n'est pas en production sur ce serveur (developers.openrainbow.com > Applications > Déployer), ou RAINBOW_HOTE ne correspond pas";
+  if (x.code === 401) return `identifiant, mot de passe ou clés d'application refusés (${x.error?.errorDetails ?? x.details ?? '401'})`;
+  return x.error?.errorDetails ?? x.details ?? (e instanceof Error ? e.message : 'erreur inconnue');
+}
+
 async function demarrer(): Promise<SdkRainbow> {
   const { RAINBOW_LOGIN, RAINBOW_MOTDEPASSE, RAINBOW_APP_ID, RAINBOW_APP_SECRET } = process.env;
   if (!RAINBOW_LOGIN || !RAINBOW_MOTDEPASSE || !RAINBOW_APP_ID || !RAINBOW_APP_SECRET) {
@@ -47,7 +56,11 @@ async function demarrer(): Promise<SdkRainbow> {
     sdk = null;
     pret = null;
   });
-  await instance.start();
+  try {
+    await instance.start();
+  } catch (e) {
+    throw new Error(`Connexion Rainbow refusée : ${raisonRainbow(e)}`);
+  }
   return instance;
 }
 
