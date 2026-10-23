@@ -4,7 +4,7 @@
  */
 import Anthropic from '@anthropic-ai/sdk';
 import type { Classification, Config, MailRecu } from '../logique/types';
-import { consignesSysteme, construireMessage, lireClassification, schemaSortie } from '../logique/classification';
+import { consignesSysteme, construireMessage, lireClassification, pdfALire, schemaSortie } from '../logique/classification';
 
 let client: Anthropic | null = null;
 
@@ -22,7 +22,21 @@ export async function classer(mail: MailRecu, config: Config, contexte: string |
     fallbacks: 'default',
     // Consignes figées en tête : mises en cache d'un mail à l'autre.
     system: [{ type: 'text', text: consignesSysteme(config.societes), cache_control: { type: 'ephemeral' } }],
-    messages: [{ role: 'user', content: construireMessage(mail, contexte) }],
+    messages: [
+      {
+        role: 'user',
+        content: [
+          ...pdfALire(mail).map(
+            (p): Anthropic.Beta.BetaRequestDocumentBlock => ({
+              type: 'document',
+              title: p.nom,
+              source: { type: 'base64', media_type: 'application/pdf', data: p.contenu.toString('base64') },
+            })
+          ),
+          { type: 'text', text: construireMessage(mail, contexte) },
+        ],
+      },
+    ],
   });
 
   if (reponse.stop_reason === 'refusal') throw new Error('Le modèle a refusé de traiter ce mail');

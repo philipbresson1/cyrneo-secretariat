@@ -6,6 +6,15 @@ import { CATEGORIES, type Categorie, type Classification, type MailRecu, type So
 import { choisirTelephone } from './telephone';
 
 export const MAX_CARACTERES_CORPS = 6000;
+export const MAX_PDF = 3;
+export const TAILLE_MAX_PDF = 5 * 1024 * 1024;
+
+/** PDF joints transmis au modèle : les bons de travaux portent l'adresse et la nature. */
+export function pdfALire(mail: MailRecu) {
+  return mail.piecesJointes
+    .filter((p) => (p.type === 'application/pdf' || /\.pdf$/i.test(p.nom)) && p.taille > 0 && p.taille <= TAILLE_MAX_PDF)
+    .slice(0, MAX_PDF);
+}
 
 export function consignesSysteme(societes: Societe[]): string {
   const liste = societes.map((s) => `- ${s.id} : ${s.nom} — ${s.metier}`).join('\n');
@@ -22,6 +31,7 @@ export function consignesSysteme(societes: Societe[]): string {
     "- dateSouhaitee : la date ou la période voulue par le client, telle qu'il l'écrit. Vide sinon.",
     "- contact : les coordonnées DU CLIENT (jamais celles d'une société du groupe). nom, telephone, email, adresse (lieu de l'intervention), commune. Laisse vide ce qui n'est pas écrit dans le mail : n'invente rien.",
     "Si le mail est transféré par un syndic ou une agence, le contact est la personne à joindre sur place quand elle est indiquée, sinon le syndic.",
+    "Les PDF joints sont fournis avant le mail : lis-les. Un bon de travaux, bon de commande ou ordre de service d'un bailleur (Erilia, OPH…), d'un syndic ou d'une entreprise est une demande_intervention : la nature, l'adresse, le locataire ou le contact sur place y figurent. Un bon qui porte sur une intervention déjà réalisée (pour facturer) est administratif.",
   ].join('\n');
 }
 

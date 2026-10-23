@@ -131,14 +131,18 @@ export async function majIntervention(id: number, champs: Partial<Omit<Intervent
   ) as Intervention;
 }
 
-/** Intervention en attente de coordonnées à laquelle ce mail répond : d'abord par les
- *  en-têtes de réponse (fiable), sinon par l'adresse de l'expéditeur (15 derniers jours). */
-export async function trouverInterventionLiee(mail: MailRecu): Promise<Intervention | null> {
+/** Intervention dont ce mail est la réponse à notre demande de coordonnées (en-têtes de
+ *  réponse : fiable). */
+export async function interventionParReponse(mail: MailRecu): Promise<Intervention | null> {
   const ids = [mail.inReplyTo, ...mail.references].filter((x): x is string => !!x);
-  if (ids.length > 0) {
-    const data = verifier(await sb.from('interventions').select('*').in('relance_message_id', ids).limit(1), 'Recherche intervention liée');
-    if (data && data.length > 0) return data[0] as Intervention;
-  }
+  if (ids.length === 0) return null;
+  const data = verifier(await sb.from('interventions').select('*').in('relance_message_id', ids).limit(1), 'Recherche intervention liée');
+  return data && data.length > 0 ? (data[0] as Intervention) : null;
+}
+
+/** Dernière demande du même expéditeur encore en attente de coordonnées (15 jours). À n'utiliser
+ *  que si le mail est bien un complément : un bailleur envoie souvent plusieurs bons distincts. */
+export async function interventionParExpediteur(mail: MailRecu): Promise<Intervention | null> {
   const depuis = new Date(Date.now() - 15 * 86_400_000).toISOString();
   const data = verifier(
     await sb

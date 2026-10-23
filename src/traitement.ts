@@ -30,13 +30,17 @@ export async function traiterMail(mail: MailRecu, boite: Boite, config: Config):
   if (await db.dejaJournalise(mail.boite, mail.messageId)) return { statut: 'rien_a_faire', resume: 'déjà traité' };
 
   const raison = raisonDeNePasRepondre(mail, config.domainesInternes);
-  const liee = raison === 'expéditeur interne au groupe' ? null : await db.trouverInterventionLiee(mail);
+  const interne = raison === 'expéditeur interne au groupe';
+  let liee = interne ? null : await db.interventionParReponse(mail);
   const contexte = liee
     ? `ce mail semble répondre à notre demande de coordonnées pour la demande ${liee.reference} (${liee.nature || liee.resume}).`
     : null;
 
   // Une panne du modèle remonte à l'appelant : le mail n'est pas journalisé et sera retenté.
   const c = await classer(mail, config, contexte);
+  // Sans en-tête de réponse, on ne rattache à une demande existante que si le modèle y voit
+  // un complément de coordonnées : deux bons de travaux du même bailleur restent deux demandes.
+  if (!liee && !interne && c.categorie === 'complement_coordonnees') liee = await db.interventionParExpediteur(mail);
   const dejaRepondu = raison === null ? await db.reponseRecente(mail.repondreA) : false;
   const actions = decider(mail, c, { config, raisonPasDeReponse: raison, dejaRepondu, interventionLiee: liee });
   const idSociete = liee?.societe ?? societeRetenue(c, mail, config);

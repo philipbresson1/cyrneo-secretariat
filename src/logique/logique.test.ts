@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { choisirTelephone, formaterTelephone, normaliserTelephone, trouverTelephones } from './telephone';
 import { raisonDeNePasRepondre } from './garde-fous';
-import { lireClassification } from './classification';
+import { lireClassification, pdfALire } from './classification';
 import { decider, type Contexte } from './decision';
 import { accuseIntervention, demandeCoordonnees, messageRainbow, referenceIntervention } from './modeles';
 import { validerConfig } from './config';
@@ -96,6 +96,23 @@ describe('lecture de la classification', () => {
   });
   it('lève sur un JSON invalide', () => {
     expect(() => lireClassification('{', mail(), config.societes)).toThrow(/illisible/);
+  });
+});
+
+describe('PDF transmis au modèle', () => {
+  it('garde au plus 3 PDF de 5 Mo, ignore le reste', () => {
+    const pj = (nom: string, type: string, taille: number) => ({ nom, type, taille, contenu: Buffer.alloc(1) });
+    const m = mail({
+      piecesJointes: [
+        pj('bon.pdf', 'application/pdf', 1000),
+        pj('photo.jpg', 'image/jpeg', 1000),
+        pj('scan.PDF', 'application/octet-stream', 1000),
+        pj('gros.pdf', 'application/pdf', 9 * 1024 * 1024),
+        pj('b.pdf', 'application/pdf', 10),
+        pj('c.pdf', 'application/pdf', 10),
+      ],
+    });
+    expect(pdfALire(m).map((p) => p.nom)).toEqual(['bon.pdf', 'scan.PDF', 'b.pdf']);
   });
 });
 
