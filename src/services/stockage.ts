@@ -290,6 +290,7 @@ export async function noterEnvoi(e: {
   sujet: string;
   messageId: string | null;
   simulation: boolean;
+  cle?: string;
 }): Promise<void> {
   verifier(
     await sb.from('secretariat_envois').insert({
@@ -299,6 +300,7 @@ export async function noterEnvoi(e: {
       sujet: e.sujet,
       message_id: e.messageId,
       simulation: e.simulation,
+      cle: e.cle ?? null,
     }),
     'Écriture envoi'
   );
@@ -354,4 +356,26 @@ export async function chercherJournal(recherche: string, limite = 200): Promise<
   const q = recherche.trim().replace(/[%,()]/g, ' ');
   if (q) requete = requete.or(`expediteur.ilike.%${q}%,sujet.ilike.%${q}%,resume.ilike.%${q}%,boite.ilike.%${q}%`);
   return verifier(await requete, 'Recherche journal') as JournalLu[];
+}
+
+/** Rappel déjà envoyé pour ce rendez-vous (clé = identifiant iCal + date) ? Les envois simulés
+ *  ne comptent pas : passer en mode réel ne doit pas sauter un rappel. */
+export async function rappelDejaEnvoye(cle: string): Promise<boolean> {
+  const data = verifier(
+    await sb.from('secretariat_envois').select('id').eq('type', 'rappel_rdv').eq('cle', cle).eq('simulation', false).limit(1),
+    'Lecture rappels'
+  );
+  return (data ?? []).length > 0;
+}
+
+/** Adresse mail d'un client retrouvée par son téléphone dans les demandes reçues. */
+export async function emailParTelephone(tel: string): Promise<string | null> {
+  const chiffres = tel.replace(/\D/g, '').slice(-9);
+  if (chiffres.length < 9) return null;
+  const motif = `%${chiffres.match(/.{1,2}/g)!.join('%')}%`; // tolère « 06 12 34… » comme « 0612… »
+  const data = verifier(
+    await sb.from('interventions').select('client_email').ilike('client_telephone', motif).neq('client_email', '').order('cree_le', { ascending: false }).limit(1),
+    'Recherche client par téléphone'
+  ) as { client_email: string }[];
+  return data && data.length > 0 ? data[0].client_email : null;
 }

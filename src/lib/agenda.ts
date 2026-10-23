@@ -15,6 +15,8 @@ export type Rdv = {
   journeeEntiere: boolean;
   lieu: string | null;
   passe: boolean;
+  description: string; // notes du rendez-vous (contact, consignes), vide si aucune
+  uid: string; // identifiant iCal, stable d'une lecture à l'autre
 };
 
 export type ResultatAgenda =
@@ -64,6 +66,8 @@ type EvenementIcs = {
   summary?: string;
   status?: string;
   location?: string;
+  description?: string | { val?: string };
+  uid?: string;
   start?: Date & { dateOnly?: boolean };
   end?: Date & { dateOnly?: boolean };
   rrule?: { between: (apres: Date, avant: Date, inclusif?: boolean) => Date[] };
@@ -91,6 +95,9 @@ function construire(
     lieu: evenement.location?.trim() || null,
     // Une journée entière n'est jamais considérée comme passée.
     passe: !journeeEntiere && fin !== null && fin.getTime() < maintenant.getTime(),
+    description: (typeof evenement.description === 'string' ? evenement.description : evenement.description?.val ?? '').trim(),
+    // Une occurrence de rendez-vous répété a le même UID : la date la distingue.
+    uid: `${evenement.uid ?? evenement.summary ?? ''}@${debut?.toISOString() ?? 'jour'}`,
   };
 }
 

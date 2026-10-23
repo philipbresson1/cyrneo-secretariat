@@ -302,6 +302,7 @@ describe('config', () => {
     const c = validerConfig(appliquerEnv(exemple, { SECRETARIAT_MODE: 'TEST', SECRETARIAT_ADRESSE_TEST: 'moi@cyrneo.test' }));
     expect(c.mode).toBe('test');
     expect(c.test).toEqual({ bulleRainbow: 'Test secrétariat', adresse: 'moi@cyrneo.test' });
+    expect(validerConfig(appliquerEnv(exemple, { SECRETARIAT_MODELE: 'claude-haiku-5-5' })).modele).toBe('claude-haiku-5-5');
     expect(() => validerConfig(appliquerEnv(exemple, { SECRETARIAT_ADRESSE_TEST: 'ton.adresse@exemple.fr' }))).toThrow(/adresse d'exemple/);
     // Sans adresse de test, le mode test refuse de démarrer plutôt que d'envoyer n'importe où.
     expect(() => validerConfig(appliquerEnv({ ...exemple, test: { ...exemple.test, adresse: '' } }, { SECRETARIAT_MODE: 'test' }))).toThrow(/mode test/);

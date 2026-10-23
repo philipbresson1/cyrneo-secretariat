@@ -75,7 +75,7 @@ export type RegleTransfert = {
   vers: string[];
 };
 
-export type Agenda = { nom: string; icsEnv: string; couleur: string };
+export type Agenda = { nom: string; icsEnv: string; couleur: string; societe?: string };
 
 export type Config = {
   mode: Mode;
@@ -90,6 +90,8 @@ export type Config = {
   /** Bulles communes au groupe. */
   bulles: { vehicules: string };
   rapport: { heure: string; destinataires: string[] };
+  /** Rappel de rendez-vous envoyé aux clients la veille, d'après les plannings. */
+  rappels: { actif: boolean; heure: string; boite: string };
   test: { bulleRainbow: string; adresse: string };
   serveur: { port: number; ecranPublic: boolean };
   modele: string;

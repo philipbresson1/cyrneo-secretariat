@@ -117,18 +117,17 @@
   ],
   "transferts": [],
   "agendas": [
-    { "nom": "Débouchage", "icsEnv": "AGENDA_ICS_DEBOUCHAGE_SA", "couleur": "#ef4444" },
-    { "nom": "Agents", "icsEnv": "AGENDA_ICS_AGENT_SA", "couleur": "#2563eb" },
-    { "nom": "Agent Multiservices 2A", "icsEnv": "AGENDA_ICS_AGENT_MS2A", "couleur": "#16a34a" },
-    { "nom": "Entretien et Couleurs", "icsEnv": "AGENDA_ICS_ENTRETIEN_COULEURS", "couleur": "#f59e0b" },
-    { "nom": "Sud Travaux", "icsEnv": "AGENDA_ICS_SUD_TRAVAUX", "couleur": "#a855f7" }
+    { "nom": "Débouchage", "icsEnv": "AGENDA_ICS_DEBOUCHAGE_SA", "couleur": "#ef4444", "societe": "sud-assainissement" },
+    { "nom": "Agents", "icsEnv": "AGENDA_ICS_AGENT_SA", "couleur": "#2563eb", "societe": "sud-assainissement" },
+    { "nom": "Agent Multiservices 2A", "icsEnv": "AGENDA_ICS_AGENT_MS2A", "couleur": "#16a34a", "societe": "multiservices-2a" },
+    { "nom": "Entretien et Couleurs", "icsEnv": "AGENDA_ICS_ENTRETIEN_COULEURS", "couleur": "#f59e0b", "societe": "entretien-couleurs" },
+    { "nom": "Sud Travaux", "icsEnv": "AGENDA_ICS_SUD_TRAVAUX", "couleur": "#a855f7", "societe": "sud-travaux" }
   ],
   "dossiers": {
     "factures": "C:/Cyrneo/Factures a saisir",
     "rapports": "C:/Cyrneo/Rapports secretariat",
     "vehicules": "C:/Cyrneo/Entretien vehicules"
   },
-
   "bulles": { "vehicules": "Entretien vehicules cyrneo" },
   "rapport": {
     "heure": "19:00",
@@ -160,5 +159,10 @@
       { "titre": "Multiservices 2A", "agendas": ["AGENDA_ICS_AGENT_MS2A"] },
       { "titre": "Sud Travaux", "agendas": ["AGENDA_ICS_SUD_TRAVAUX"] }
     ]
+  },
+  "rappels": {
+    "actif": true,
+    "heure": "17:00",
+    "boite": "info-cyrneo"
   }
 }

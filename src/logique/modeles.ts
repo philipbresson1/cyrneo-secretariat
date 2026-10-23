@@ -166,6 +166,27 @@ export function messageRainbowVehicule(mail: MailRecu, c: Classification, fichie
     .join('\n');
 }
 
+export type InfosRappel = { nom: string; objet: string; debut: Date | null; lieu: string };
+
+const fmtJourLong = new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', weekday: 'long', day: 'numeric', month: 'long' });
+const fmtHeureRdv = new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit' });
+
+/** Rappel envoyé la veille d'un rendez-vous lu dans le planning. */
+export function rappelRdv(r: InfosRappel, jour: Date, s: Societe, adresse = ADRESSE_DEFAUT): MailSortant {
+  const quand = `${fmtJourLong.format(jour)}${r.debut ? ` à ${fmtHeureRdv.format(r.debut).replace(':', 'h')}` : ', dans la journée'}`;
+  const lignes = [
+    salutation(r.nom),
+    '',
+    `Petit rappel : nous intervenons chez vous demain, ${quand}, pour ${r.objet}.`,
+    ...(r.lieu ? [`Adresse : ${r.lieu}`] : []),
+    '',
+    "Pour que tout se passe bien, merci de laisser l'accès dégagé (portail, regards, stationnement du véhicule).",
+    `Un empêchement ? Prévenez-nous au ${s.telephone} ou répondez simplement à ce mail.`,
+  ];
+  const sujet = `Rappel : notre passage demain ${fmtJourLong.format(jour)} — ${s.nom}`;
+  return finaliser(sujet, lignes, 'À demain,', s, adresse);
+}
+
 export function referenceIntervention(id: number, type: TypeDemande, annee: number): string {
   return `${{ devis: 'DEV', reclamation: 'REC', intervention: 'INT' }[type]}-${annee}-${String(id).padStart(4, '0')}`;
 }

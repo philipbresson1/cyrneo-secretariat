@@ -14,6 +14,7 @@ const DEFAUTS = {
   dossiers: { factures: 'donnees/factures', rapports: 'donnees/rapports', vehicules: 'donnees/vehicules' },
   bulles: { vehicules: '' },
   rapport: { heure: '19:00', destinataires: [] },
+  rappels: { actif: false, heure: '17:00', boite: '' },
   test: { bulleRainbow: '', adresse: '' },
   serveur: { port: 3939, ecranPublic: true },
   modele: 'claude-opus-5-5',
@@ -69,6 +70,10 @@ export function validerConfig(brut: unknown): Config {
     }
   }
   if (!/^\d{1,2}:\d{2}$/.test(c.heuresOuvrees.debut) || !/^\d{1,2}:\d{2}$/.test(c.heuresOuvrees.fin)) erreurs.push('heuresOuvrees : debut et fin au format HH:MM');
+  if (c.rappels.actif) {
+    if (!/^\d{1,2}:\d{2}$/.test(c.rappels.heure)) erreurs.push('rappels.heure au format HH:MM');
+    if (!c.boites.some((b) => b.id === c.rappels.boite)) erreurs.push(`rappels.boite « ${c.rappels.boite} » : boîte d'envoi inconnue`);
+  }
   if (!/^\d{1,2}:\d{2}$/.test(c.rapport.heure)) erreurs.push('rapport.heure au format HH:MM');
 
   // Société sans numéro : les mails clients donnent celui du groupe, jamais un trou.
@@ -87,6 +92,7 @@ export function validerConfig(brut: unknown): Config {
 export function appliquerEnv(brut: Record<string, unknown>, env: NodeJS.ProcessEnv = process.env): Record<string, unknown> {
   const sortie = { ...brut };
   if (env.SECRETARIAT_MODE) sortie.mode = env.SECRETARIAT_MODE.trim().toLowerCase();
+  if (env.SECRETARIAT_MODELE) sortie.modele = env.SECRETARIAT_MODELE.trim();
   const test = { ...((brut.test as Record<string, unknown>) ?? {}) };
   if (env.SECRETARIAT_ADRESSE_TEST) test.adresse = env.SECRETARIAT_ADRESSE_TEST.trim();
   if (env.SECRETARIAT_BULLE_TEST) test.bulleRainbow = env.SECRETARIAT_BULLE_TEST.trim();

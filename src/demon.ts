@@ -8,6 +8,7 @@
  *   npm start -- bulles        liste les bulles Rainbow visibles par le compte
  *   npm start -- dolibarr      vérifie l'accès Dolibarr, société par société
  *   npm start -- verifier      teste chaque branchement : base, Claude, boîtes mail, agendas
+ *   npm start -- rappels [apercu]   rappels des rendez-vous de demain (apercu : n'envoie rien)
  */
 import { config as chargerEnv } from 'dotenv';
 const env = chargerEnv({ path: '.env.local', quiet: true });
@@ -26,6 +27,7 @@ import { genererRapport } from './services/rapport-excel';
 import { envoyer } from './services/smtp';
 import { arreter as arreterRainbow, listerBulles } from './services/rainbow';
 import { listerEntites, nomEntite } from './services/dolibarr';
+import { envoyerRappels, type BilanRappels } from './services/rappels';
 import { demarrerServeur, type Etat } from './services/serveur';
 import { ecrireCurseur, lireCurseur, noterEnvoi, testerBase } from './services/stockage';
 import Anthropic from '@anthropic-ai/sdk';
@@ -150,6 +152,7 @@ async function boucle(config: Config): Promise<void> {
   process.on('SIGTERM', quitter);
 
   let dernierRapport = '';
+  let dernierRappel = '';
   for (;;) {
     const debut = Date.now();
     await passage(config, etat);
@@ -171,6 +174,15 @@ async function boucle(config: Config): Promise<void> {
       }
     }
 
+    if (config.rappels.actif && heure >= config.rappels.heure.padStart(5, '0') && dernierRappel !== jour) {
+      dernierRappel = jour;
+      try {
+        afficherRappels(await envoyerRappels(config));
+      } catch (e) {
+        log(`⚠️ Rappels de rendez-vous : ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+
     // Redémarrage de nuit : secretariat.ps1 relance aussitôt le démon après un git pull,
     // ce qui installe les mises à jour sans intervention.
     if (heure.startsWith('03:') && Date.now() - etat.demarreLe.getTime() > 3_600_000) {
@@ -182,6 +194,12 @@ async function boucle(config: Config): Promise<void> {
     const attente = Math.max(10_000, config.intervalleMinutes * 60_000 - (Date.now() - debut));
     await new Promise((r) => setTimeout(r, attente));
   }
+}
+
+function afficherRappels(b: BilanRappels): void {
+  log(`Rappels de rendez-vous : ${b.envoyes.length} envoyé(s), ${b.sansEmail} sans adresse mail, ${b.ignores} hors client, ${b.deja} déjà envoyé(s)`);
+  for (const l of b.envoyes) log(`  ✉️ ${l}`);
+  for (const l of b.erreurs) log(`  ⚠️ ${l}`);
 }
 
 async function essai(config: Config, fichier: string): Promise<void> {
@@ -263,6 +281,9 @@ async function principal() {
       process.exit(0);
     case 'verifier':
       return verifier(config);
+    case 'rappels':
+      afficherRappels(await envoyerRappels(config, new Date(), argument === 'apercu'));
+      return;
     case 'dolibarr': {
       console.log(`Dolibarr : ${config.dolibarr.url}\n`);
       try {
@@ -287,7 +308,7 @@ async function principal() {
       return;
     }
     default:
-      throw new Error(`Commande inconnue « ${commande} » (demarrer, une-fois, essai, rapport, bulles, dolibarr, verifier)`);
+      throw new Error(`Commande inconnue « ${commande} » (demarrer, une-fois, essai, rapport, bulles, dolibarr, verifier, rappels)`);
   }
 }
 

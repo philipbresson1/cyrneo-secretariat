@@ -57,11 +57,12 @@ create index idx_interventions_relance on interventions (relance_message_id);
 create table secretariat_envois (
   id bigint generated always as identity primary key,
   journal_id bigint references secretariat_journal (id),
-  type text not null check (type in ('accuse_intervention', 'accuse_devis', 'demande_coordonnees', 'transfert', 'alerte', 'rapport')),
+  type text not null check (type in ('accuse_intervention', 'accuse_devis', 'demande_coordonnees', 'transfert', 'alerte', 'rapport', 'rappel_rdv')),
   destinataire text not null,
   sujet text not null,
   message_id text,
   simulation boolean not null default false,
+  cle text,                             -- rappel de rendez-vous : identifiant iCal + date
   envoye_le timestamptz not null default now()
 );
 create index idx_envois_destinataire on secretariat_envois (destinataire, envoye_le desc);

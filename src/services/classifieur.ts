@@ -17,9 +17,9 @@ export async function classer(mail: MailRecu, config: Config, contexte: string |
     max_tokens: 4000,
     // Le tri d'un mail est simple : effort bas, rapide et économique.
     output_config: { effort: 'low', format: { type: 'json_schema', schema: schemaSortie(config.societes) } },
-    // Si le modèle décline (faux positif de sécurité), l'API bascule d'elle-même sur un autre modèle.
-    betas: ['server-side-fallback-2026-07-01'],
-    fallbacks: 'default',
+    // Si le modèle décline (faux positif de sécurité), l'API bascule d'elle-même sur un autre
+    // modèle. Option propre à Opus et Sonnet : Haiku la refuserait.
+    ...(/haiku/i.test(config.modele) ? {} : { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const }),
     // Consignes figées en tête : mises en cache d'un mail à l'autre.
     system: [{ type: 'text', text: consignesSysteme(config.societes), cache_control: { type: 'ephemeral' } }],
     messages: [
