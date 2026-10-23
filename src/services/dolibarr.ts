@@ -3,13 +3,15 @@
  *
  * Un seul accès (DOLIBARR_API_KEY) pour toutes les sociétés : l'en-tête DOLAPIENTITY
  * choisit la société (l'« entité » Dolibarr) à chaque appel. Le compte API doit avoir
- * accès à chaque entité et les droits Tiers (lire/créer) et Interventions (lire/créer).
+ * accès à chaque entité et les droits Tiers (lire) et Interventions (lire/créer).
  *
  * Les bons sont créés en BROUILLON : un humain les valide dans Dolibarr.
+ * Aucun tiers n'est jamais créé ici : le bon n'est fait que sur un tiers existant, reconnu
+ * dans la liste synchronisée (voir services/tiers.ts).
  */
 import type { Classification, Config } from '../logique/types';
+import type { ContactTiers, Tiers } from '../logique/tiers';
 
-export type ClientDolibarr = { id: number; nom: string; cree: boolean };
 export type BonDolibarr = { id: number; ref: string };
 
 export class ErreurDolibarr extends Error {
@@ -87,46 +89,76 @@ export async function listerEntites(config: Config): Promise<{ id: number; nom: 
   }
 }
 
-type TiersBrut = { id: string | number; name?: string; nom?: string };
-
-function filtre(valeur: string): string {
-  // Les apostrophes casseraient le filtre SQL de Dolibarr : elles ne servent pas à la recherche.
-  return valeur.replace(/['"()]/g, ' ').trim();
-}
-
-async function chercher(config: Config, entite: number, sqlfilters: string): Promise<TiersBrut | null> {
-  try {
-    const liste = await appel<TiersBrut[]>(config, entite, 'GET', `/thirdparties?limit=1&sqlfilters=${encodeURIComponent(sqlfilters)}`);
-    return liste?.[0] ?? null;
-  } catch (e) {
-    // Dolibarr répond 404 quand la recherche ne trouve rien.
-    if (e instanceof ErreurDolibarr && e.statut === 404) return null;
-    throw e;
+/** Lit toutes les pages d'une liste de l'API (Dolibarr répond 404 quand une page est vide). */
+async function toutLire<T>(config: Config, entite: number, chemin: string): Promise<T[]> {
+  const tout: T[] = [];
+  for (let page = 0; ; page++) {
+    let lot: T[];
+    try {
+      lot = (await appel<T[]>(config, entite, 'GET', `${chemin}${chemin.includes('?') ? '&' : '?'}limit=500&page=${page}&sortfield=t.rowid&sortorder=ASC`)) ?? [];
+    } catch (e) {
+      if (e instanceof ErreurDolibarr && e.statut === 404) break;
+      throw e;
+    }
+    tout.push(...lot);
+    if (lot.length < 500) break;
   }
+  return tout;
 }
 
-/** Retrouve le client par email, puis par téléphone ; le crée s'il n'existe pas. */
-export async function trouverOuCreerClient(config: Config, entite: number, c: Classification): Promise<ClientDolibarr> {
-  const { email, telephone, nom, adresse, commune } = c.contact;
-  const tel = telephone.replace(/\s/g, '');
+/** Objet de l'API sans les champs vides : c'est ce qu'on garde en « brut » pour référence. */
+function compacter(o: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== null && v !== '' && !(Array.isArray(v) && v.length === 0) && !(typeof v === 'object' && v && Object.keys(v).length === 0)));
+}
 
-  let trouve: TiersBrut | null = null;
-  if (email) trouve = await chercher(config, entite, `(t.email:=:'${filtre(email)}')`);
-  if (!trouve && tel) trouve = await chercher(config, entite, `(t.phone:like:'%${filtre(tel.slice(-9))}%')`);
-  if (trouve) return { id: Number(trouve.id), nom: trouve.name ?? trouve.nom ?? nom, cree: false };
+const texte = (v: unknown): string => (v === null || v === undefined ? '' : String(v).trim());
 
-  const id = await appel<number>(config, entite, 'POST', '/thirdparties', {
-    name: nom || email || tel || 'Client à identifier',
-    client: 1, // client (et non prospect ou fournisseur)
-    code_client: 'auto', // numérotation automatique de Dolibarr
-    email: email || undefined,
-    phone: tel || undefined,
-    address: adresse || undefined,
-    town: commune || undefined,
-    country_code: 'FR',
-    note_private: 'Créé automatiquement par le secrétariat CYRNEO à partir d’un mail.',
-  });
-  return { id: Number(id), nom: nom || email || tel, cree: true };
+export type TiersLu = Tiers & { brut: Record<string, unknown> };
+export type ContactLu = ContactTiers & { brut: Record<string, unknown> };
+
+/** Liste complète des tiers et de leurs contacts, toutes sociétés confondues (dédoublonnée :
+ *  les tiers partagés entre entités remontent dans chacune). */
+export async function lireTiersEtContacts(config: Config): Promise<{ tiers: TiersLu[]; contacts: ContactLu[] }> {
+  const tiers = new Map<number, TiersLu>();
+  const contacts = new Map<number, ContactLu>();
+  for (const entite of new Set(Object.values(config.dolibarr.entites))) {
+    for (const t of await toutLire<Record<string, unknown>>(config, entite, '/thirdparties')) {
+      const id = Number(t.id);
+      if (tiers.has(id)) continue;
+      tiers.set(id, {
+        id,
+        nom: texte(t.name ?? t.nom),
+        alias: texte(t.name_alias),
+        code_client: texte(t.code_client),
+        adresse: texte(t.address),
+        cp: texte(t.zip),
+        ville: texte(t.town),
+        telephone: [texte(t.phone), texte(t.phone_mobile)].filter(Boolean).join(' / '),
+        email: texte(t.email).toLowerCase(),
+        parent_id: Number(t.parent) > 0 ? Number(t.parent) : null,
+        client: Number(t.client) || 0,
+        fournisseur: Number(t.fournisseur) || 0,
+        actif: String(t.status ?? '1') === '1',
+        note_publique: texte(t.note_public),
+        note_privee: texte(t.note_private),
+        brut: compacter(t),
+      });
+    }
+    for (const c of await toutLire<Record<string, unknown>>(config, entite, '/contacts')) {
+      const id = Number(c.id);
+      if (contacts.has(id)) continue;
+      contacts.set(id, {
+        id,
+        tiers_id: Number(c.socid) > 0 ? Number(c.socid) : null,
+        nom: [texte(c.firstname), texte(c.lastname)].filter(Boolean).join(' '),
+        email: texte(c.email).toLowerCase(),
+        telephone: [texte(c.phone_pro), texte(c.phone_mobile), texte(c.phone_perso)].filter(Boolean).join(' / '),
+        poste: texte(c.poste),
+        brut: compacter(c),
+      });
+    }
+  }
+  return { tiers: [...tiers.values()], contacts: [...contacts.values()] };
 }
 
 /** Texte du bon : ce qu'un technicien doit savoir en ouvrant la fiche. */

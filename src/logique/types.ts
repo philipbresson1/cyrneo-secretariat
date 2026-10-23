@@ -169,6 +169,7 @@ export type Intervention = {
   intervenant: string | null;
   notes: string | null;
   dolibarr_ref: string | null;
+  dolibarr_tiers_id?: number | null;
   cree_le: string;
 };
 

@@ -7,6 +7,7 @@
  *   npm start -- rapport [AAAA-MM-JJ]   génère l'Excel du jour (ou d'une date)
  *   npm start -- bulles        liste les bulles Rainbow visibles par le compte
  *   npm start -- dolibarr      vérifie l'accès Dolibarr, société par société
+ *   npm start -- tiers         recopie maintenant la liste des tiers Dolibarr
  *   npm start -- essai-bon REF bon Dolibarr + message bulle de test pour une fiche existante
  *   npm start -- verifier      teste chaque branchement : base, Claude, boîtes mail, agendas
  *   npm start -- rappels [apercu]   rappels des rendez-vous de demain (apercu : n'envoie rien)
@@ -17,7 +18,7 @@ const env = chargerEnv({ path: '.env.local', quiet: true });
 import { readFile, access, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { simpleParser } from 'mailparser';
-import type { Classification, Config } from './logique/types';
+import type { Classification, Config, MailRecu } from './logique/types';
 import { appliquerEnv, validerConfig } from './logique/config';
 import { raisonDeNePasRepondre } from './logique/garde-fous';
 import { decider } from './logique/decision';
@@ -27,10 +28,11 @@ import { classer } from './services/classifieur';
 import { genererRapport } from './services/rapport-excel';
 import { envoyer } from './services/smtp';
 import { arreter as arreterRainbow, listerBulles, publier } from './services/rainbow';
-import { creerBonIntervention, entiteDe, listerEntites, trouverOuCreerClient, verifierDroits } from './services/dolibarr';
+import { creerBonIntervention, entiteDe, listerEntites, verifierDroits } from './services/dolibarr';
+import { blocRainbow, reconnaitreTiers, synchroDue, synchroniserTiers } from './services/tiers';
 import { envoyerRappels, type BilanRappels } from './services/rappels';
 import { demarrerServeur, type Etat } from './services/serveur';
-import { ecrireCurseur, interventionParReference, lireCurseur, majIntervention, noterEnvoi, testerBase } from './services/stockage';
+import { ecrireCurseur, expediteurDe, interventionParReference, lireCurseur, majIntervention, noterEnvoi, testerBase } from './services/stockage';
 import Anthropic from '@anthropic-ai/sdk';
 import { abandonner, traiterMail } from './traitement';
 
@@ -154,6 +156,7 @@ async function boucle(config: Config): Promise<void> {
 
   let dernierRapport = '';
   let dernierRappel = '';
+  let derniereVerifTiers = 0;
   for (;;) {
     const debut = Date.now();
     await passage(config, etat);
@@ -181,6 +184,16 @@ async function boucle(config: Config): Promise<void> {
         afficherRappels(await envoyerRappels(config));
       } catch (e) {
         log(`⚠️ Rappels de rendez-vous : ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+
+    // Liste des tiers Dolibarr : recopiée chaque semaine (vérifié une fois par heure).
+    if (config.dolibarr.url && process.env.DOLIBARR_API_KEY && Date.now() - derniereVerifTiers > 3_600_000) {
+      derniereVerifTiers = Date.now();
+      try {
+        if (await synchroDue()) log(`Tiers Dolibarr synchronisés : ${await synchroniserTiers(config)}`);
+      } catch (e) {
+        log(`⚠️ Synchro des tiers Dolibarr : ${e instanceof Error ? e.message : String(e)}`);
       }
     }
 
@@ -277,19 +290,24 @@ async function essaiBon(config: Config, reference: string) {
   };
   const entite = entiteDe(config, fiche.societe);
   console.log(`${reference} · ${s.nom} → entité Dolibarr ${entite}`);
-  const client = await trouverOuCreerClient(config, entite, c);
-  console.log(`✓ Client : ${client.nom} (n° ${client.id}${client.cree ? ', créé' : ', existant'})`);
-  const bon = await creerBonIntervention(config, entite, client.id, c, reference);
-  console.log(`✓ Bon d'intervention : ${bon.ref} (brouillon)`);
-  await majIntervention(fiche.id, { dolibarr_ref: bon.ref });
+  if (await synchroDue()) console.log(`Tiers Dolibarr synchronisés : ${await synchroniserTiers(config)}`);
+  const de = await expediteurDe(fiche);
+  const mail = { deAdresse: de?.adresse ?? fiche.client_email, deNom: de?.nom ?? '' } as MailRecu;
+  const r = await reconnaitreTiers(config, mail, c);
+  console.log(blocRainbow(r));
+  let ligneBon = 'Pas de bon : tiers non reconnu avec certitude (aucun tiers n’est créé automatiquement)';
+  if (r.tiers) {
+    const bon = await creerBonIntervention(config, entite, r.tiers.id, c, reference);
+    await majIntervention(fiche.id, { dolibarr_ref: bon.ref, dolibarr_tiers_id: r.tiers.id });
+    ligneBon = `Bon ${bon.ref} créé en brouillon\n${config.dolibarr.url}/fichinter/card.php?id=${bon.id}`;
+  }
+  console.log(ligneBon);
   const texte = [
-    `🧪 Test Dolibarr — ${s.nom}`,
-    `Bon ${bon.ref} créé en brouillon pour ${reference}`,
-    `Client : ${client.nom}${client.cree ? ' (nouveau tiers)' : ''}`,
-    `${[fiche.adresse, fiche.commune].filter(Boolean).join(', ')}`,
-    `${fiche.nature}${fiche.date_souhaitee ? ` · souhaité ${fiche.date_souhaitee}` : ''}`,
-    `${config.dolibarr.url}/fichinter/card.php?id=${bon.id}`,
-  ].filter(Boolean).join('\n');
+    `🧪 Test Dolibarr — ${s.nom} · ${reference}`,
+    `${[fiche.adresse, fiche.commune].filter(Boolean).join(', ')} · ${fiche.nature}`,
+    blocRainbow(r),
+    ligneBon,
+  ].join('\n');
   await publier(config.test.bulleRainbow, texte);
   console.log(`✓ Message publié dans « ${config.test.bulleRainbow} »`);
   await arreterRainbow();
@@ -323,6 +341,9 @@ async function principal() {
     case 'rappels':
       afficherRappels(await envoyerRappels(config, new Date(), argument === 'apercu'));
       return;
+    case 'tiers':
+      console.log(`Synchronisation des tiers Dolibarr… ${await synchroniserTiers(config)}`);
+      return;
     case 'essai-bon':
       return essaiBon(config, argument ?? 'INT-2026-0006');
     case 'dolibarr': {
@@ -352,7 +373,7 @@ async function principal() {
       return;
     }
     default:
-      throw new Error(`Commande inconnue « ${commande} » (demarrer, une-fois, essai, essai-bon, rapport, bulles, dolibarr, verifier, rappels)`);
+      throw new Error(`Commande inconnue « ${commande} » (demarrer, une-fois, essai, essai-bon, tiers, rapport, bulles, dolibarr, verifier, rappels)`);
   }
 }
 

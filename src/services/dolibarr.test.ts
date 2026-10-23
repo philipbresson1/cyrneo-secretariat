@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import exemple from '../../config.exemple.json';
 import { validerConfig } from '../logique/config';
 import type { Classification } from '../logique/types';
-import { creerBonIntervention, descriptionBon, entiteDe, trouverOuCreerClient } from './dolibarr';
+import { creerBonIntervention, descriptionBon, entiteDe, lireTiersEtContacts } from './dolibarr';
 
 const config = validerConfig({ ...exemple, dolibarr: { actif: true, url: 'https://doli.exemple.fr/', entites: { 'sud-assainissement': 2 } } });
 const c: Classification = {
@@ -25,28 +25,19 @@ afterEach(() => vi.unstubAllGlobals());
 process.env.DOLIBARR_API_KEY = 'cle-test';
 
 describe('connecteur Dolibarr', () => {
-  it("envoie la clé et l'entité de la société à chaque appel", async () => {
-    const appels = simuler([{ statut: 200, corps: [{ id: '42', name: 'Jean' }] }]);
-    const client = await trouverOuCreerClient(config, entiteDe(config, 'sud-assainissement'), c);
-    expect(client).toEqual({ id: 42, nom: 'Jean', cree: false });
+  it("lit tous les tiers et contacts, page par page, avec la clé et l'entité", async () => {
+    const appels = simuler([
+      { statut: 200, corps: [{ id: '42', name: 'Résidence Les Pins', address: 'Route des Sanguinaires', town: 'Ajaccio', parent: '7', status: '1', email: 'X@Y.FR', phone: null }] },
+      { statut: 200, corps: [{ id: '9', socid: '42', firstname: 'Paul', lastname: 'Leca', email: 'paul@leca.fr', phone_mobile: '06 11 22 33 44' }] },
+    ]);
+    const { tiers, contacts } = await lireTiersEtContacts(config);
+    expect(tiers[0]).toMatchObject({ id: 42, nom: 'Résidence Les Pins', parent_id: 7, actif: true, email: 'x@y.fr', telephone: '' });
+    expect(tiers[0].brut).not.toHaveProperty('phone');
+    expect(contacts[0]).toMatchObject({ id: 9, tiers_id: 42, nom: 'Paul Leca', telephone: '06 11 22 33 44' });
     const h = appels[0].init.headers as Record<string, string>;
     expect(h.DOLAPIKEY).toBe('cle-test');
     expect(h.DOLAPIENTITY).toBe('2');
-    expect(appels[0].url).toMatch(/^https:\/\/doli\.exemple\.fr\/api\/index\.php\/thirdparties\?/);
-    expect(decodeURIComponent(appels[0].url)).toContain("(t.email:=:'jean@orange.fr')");
-  });
-
-  it('cherche par téléphone puis crée le client si personne ne correspond', async () => {
-    const appels = simuler([
-      { statut: 404, corps: { error: { message: 'No thirdparty found' } } },
-      { statut: 404, corps: { error: { message: 'No thirdparty found' } } },
-      { statut: 200, corps: 77 },
-    ]);
-    const client = await trouverOuCreerClient(config, 2, c);
-    expect(client).toEqual({ id: 77, nom: "Jean O'Brien", cree: true });
-    expect(decodeURIComponent(appels[1].url)).toContain("(t.phone:like:'%612345678%')");
-    const corps = JSON.parse(String(appels[2].init.body));
-    expect(corps).toMatchObject({ name: "Jean O'Brien", client: 1, code_client: 'auto', phone: '0612345678', town: 'Porticcio' });
+    expect(appels[0].url).toBe('https://doli.exemple.fr/api/index.php/thirdparties?limit=500&page=0&sortfield=t.rowid&sortorder=ASC');
   });
 
   it('crée le bon en brouillon et renvoie sa référence', async () => {

@@ -266,6 +266,15 @@ export async function interventionParReference(reference: string): Promise<Inter
   return (data as Intervention) ?? null;
 }
 
+/** Expéditeur du mail à l'origine d'une fiche (journal). */
+export async function expediteurDe(i: Intervention): Promise<{ adresse: string; nom: string } | null> {
+  const data = verifier(
+    await sb.from('secretariat_journal').select('expediteur, expediteur_adresse').eq('message_id', i.mail_message_id).limit(1).maybeSingle(),
+    'Lecture journal'
+  ) as { expediteur: string; expediteur_adresse: string } | null;
+  return data ? { adresse: data.expediteur_adresse, nom: data.expediteur.replace(/\s*<.*>$/, '') } : null;
+}
+
 export async function interventionParId(id: number): Promise<Intervention | null> {
   const data = verifier(await sb.from('interventions').select('*').eq('id', id).maybeSingle(), 'Lecture intervention');
   return (data as Intervention) ?? null;

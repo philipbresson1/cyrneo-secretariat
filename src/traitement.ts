@@ -21,7 +21,8 @@ import { classer } from './services/classifieur';
 import { envoyer } from './services/smtp';
 import { publier } from './services/rainbow';
 import { classerPiecesJointes } from './services/fichiers';
-import { creerBonIntervention, entiteDe, trouverOuCreerClient } from './services/dolibarr';
+import { creerBonIntervention, entiteDe } from './services/dolibarr';
+import { blocRainbow, reconnaitreTiers, type TiersReconnu } from './services/tiers';
 import * as db from './services/stockage';
 
 export type Bilan = { statut: 'traite' | 'rien_a_faire' | 'simulation' | 'erreur'; resume: string };
@@ -98,6 +99,22 @@ export async function traiterMail(mail: MailRecu, boite: Boite, config: Config):
   let fichiers: string[] = [];
   const envoisANoter: { type: string; destinataire: string; sujet: string; messageId: string | null }[] = [];
 
+  // Tiers Dolibarr de la demande, cherché une seule fois (Rainbow puis bon d'intervention).
+  let reconnu: TiersReconnu | null | undefined;
+  async function tiers(): Promise<TiersReconnu | null> {
+    if (reconnu !== undefined) return reconnu;
+    try {
+      reconnu = await reconnaitreTiers(config, mail, classification);
+      if (reconnu.tiers && intervention && intervention.dolibarr_tiers_id !== reconnu.tiers.id) {
+        intervention = await db.majIntervention(intervention.id, { dolibarr_tiers_id: reconnu.tiers.id });
+      }
+    } catch (e) {
+      reconnu = null;
+      faites.push({ action: 'bon_dolibarr', detail: `recherche du tiers — ÉCHEC : ${e instanceof Error ? e.message : String(e)}`, ok: false, simulee: false });
+    }
+    return reconnu;
+  }
+
   async function executer(type: ActionExecutee['action'], simulee: boolean, detail: string, fn: () => Promise<string | void>) {
     if (simulee) {
       faites.push({ action: type, detail: `[simulation] ${detail}`, ok: true, simulee: true });
@@ -134,7 +151,7 @@ export async function traiterMail(mail: MailRecu, boite: Boite, config: Config):
       }
       case 'rainbow': {
         const ref = intervention?.reference ?? '';
-        const texte =
+        let texte =
           a.gabarit === 'complement' && intervention
             ? `${messageRainbowComplement(mail, classification, s, intervention)}${a.suite !== 'À rappeler pour planifier.' ? `\n⚠️ ${a.suite}` : ''}`
             : a.gabarit === 'vehicule'
@@ -142,6 +159,8 @@ export async function traiterMail(mail: MailRecu, boite: Boite, config: Config):
             : a.gabarit === 'relance' || a.gabarit === 'reclamation'
               ? messageRainbowRelance(mail, classification, s, a.gabarit === 'reclamation' ? `${classification.urgence === 'urgente' ? '🚨' : '⚠️'} Réclamation ${intervention?.reference ?? ''}`.trim() : undefined)
               : messageRainbow(mail, classification, s, ref, a.suite);
+        const r = a.gabarit !== 'vehicule' && intervention ? await tiers() : null;
+        if (r && r.index.tiers.size > 0) texte += `\n${blocRainbow(r)}`; // copie pas encore faite : rien à dire
         const bulle = choisirBulle(config, s, {
           gabarit: a.gabarit,
           type: intervention?.type ?? 'intervention',
@@ -207,11 +226,12 @@ export async function traiterMail(mail: MailRecu, boite: Boite, config: Config):
         const inter = intervention;
         // Dolibarr n'a pas de bac à sable : rien n'y est écrit hors du mode réel.
         await executer('bon_dolibarr', config.mode !== 'reel', `bon d'intervention ${s.nom}`, async () => {
-          const entite = entiteDe(config, inter.societe);
-          const client = await trouverOuCreerClient(config, entite, classification);
-          const bon = await creerBonIntervention(config, entite, client.id, classification, inter.reference);
+          const r = await tiers();
+          // Jamais de tiers créé automatiquement : sans tiers reconnu, le bureau fait le bon.
+          if (!r?.tiers) throw new Error('tiers non reconnu avec certitude, bon à faire à la main');
+          const bon = await creerBonIntervention(config, entiteDe(config, inter.societe), r.tiers.id, classification, inter.reference);
           intervention = await db.majIntervention(inter.id, { dolibarr_ref: bon.ref });
-          return `${bon.ref} (brouillon) pour ${client.nom}${client.cree ? ', client créé' : ''}`;
+          return `${bon.ref} (brouillon) pour ${r.tiers.nom}`;
         });
         break;
       }

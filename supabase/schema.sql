@@ -91,3 +91,50 @@ create policy maj_interventions on interventions for update to authenticated
   with check ((select auth.jwt() ->> 'email') = 'philip.bresson1@gmail.com');
 create policy lecture_envois on secretariat_envois for select to authenticated
   using ((select auth.jwt() ->> 'email') = 'philip.bresson1@gmail.com');
+
+-- Copie de la liste des tiers Dolibarr (commune à toutes les sociétés), resynchronisée chaque semaine.
+-- Tiers = résidence, personne ou entreprise, parfois rattachée à un syndic (parent_id).
+create table dolibarr_tiers (
+  id bigint primary key,
+  nom text not null default '',
+  alias text not null default '',
+  code_client text not null default '',
+  adresse text not null default '',
+  cp text not null default '',
+  ville text not null default '',
+  telephone text not null default '',
+  email text not null default '',
+  parent_id bigint,
+  client smallint not null default 0,
+  fournisseur smallint not null default 0,
+  actif boolean not null default true,
+  note_publique text not null default '',
+  note_privee text not null default '',
+  brut jsonb not null default '{}',
+  vu_le timestamptz not null default now()
+);
+create index idx_tiers_parent on dolibarr_tiers (parent_id);
+create table dolibarr_contacts (
+  id bigint primary key,
+  tiers_id bigint,
+  nom text not null default '',
+  email text not null default '',
+  telephone text not null default '',
+  poste text not null default '',
+  brut jsonb not null default '{}',
+  vu_le timestamptz not null default now()
+);
+create index idx_contacts_tiers on dolibarr_contacts (tiers_id);
+create table secretariat_synchro (
+  nom text primary key,
+  fait_le timestamptz not null,
+  bilan text not null default ''
+);
+alter table interventions add column dolibarr_tiers_id bigint;
+alter table dolibarr_tiers enable row level security;
+alter table dolibarr_contacts enable row level security;
+alter table secretariat_synchro enable row level security;
+create policy lecture_tiers on dolibarr_tiers for select to authenticated
+  using ((select auth.jwt() ->> 'email') = 'philip.bresson1@gmail.com');
+create policy lecture_contacts on dolibarr_contacts for select to authenticated
+  using ((select auth.jwt() ->> 'email') = 'philip.bresson1@gmail.com');
