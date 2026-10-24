@@ -13,7 +13,7 @@ import { randomUUID } from 'node:crypto';
 import type { Config, Intervention, StatutIntervention } from '../logique/types';
 import { nomPresent } from '../logique/tiers';
 import { LIBELLES_CATEGORIES, type Categorie } from '../logique/types';
-import { decalageParis, estWeekEnd, jourParis as jourParisCle, rdvDuJour, titreComparable, type Rdv } from '../lib/agenda';
+import { decalageParis, estWeekEnd, rdvDesJours, titreComparable, type Rdv } from '../lib/agenda';
 import { bonsAFacturer, chercherJournal, creerInterventionManuelle, dernieresRealisees, devisSignes, historiqueInterventions, interventionsEntre, interventionsOuvertes, majIntervention, type NouvelleDemande } from './stockage';
 
 export type Etat = { demarreLe: Date; dernierPassage: Date | null; erreurs: string[]; mode: string };
@@ -41,33 +41,57 @@ const RECUL_GANTT = 14;
 type AgendaLu = { env: string; nom: string; couleur: string; aujourdhui: Rdv[]; demain: Rdv[]; periode: { date: Date; rdvs: Rdv[] }[]; erreur: string | null };
 let cacheAgendas: { lu: number; agendas: AgendaLu[] } | null = null;
 
-async function lireAgendas(config: Config): Promise<AgendaLu[]> {
-  if (cacheAgendas && Date.now() - cacheAgendas.lu < 5 * 60_000) return cacheAgendas.agendas;
+async function chargerAgendas(config: Config): Promise<AgendaLu[]> {
   const maintenant = new Date();
-  const demain = new Date(maintenant.getTime() + 86_400_000);
-  const agendas = await Promise.all(
+  const debut = new Date(maintenant.getTime() - RECUL_GANTT * 86_400_000);
+  return Promise.all(
     config.agendas.map(async (a): Promise<AgendaLu> => {
       const url = process.env[a.icsEnv];
       if (!url) return { env: a.icsEnv, nom: a.nom, couleur: a.couleur, aujourdhui: [], demain: [], periode: [], erreur: `variable ${a.icsEnv} absente` };
       try {
-        const r = await fetch(url);
+        const r = await fetch(url, { signal: AbortSignal.timeout(15_000) });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        const ics = await r.text();
-        // Gantt des chantiers (bâtiment) : semaine roulante à partir d'aujourd'hui, précédée de
-        // deux semaines lues seulement pour retrouver le vrai début des chantiers en cours.
-        const periode = Array.from({ length: RECUL_GANTT + JOURS_GANTT }, (_, n) => {
-          const date = new Date(maintenant.getTime() + (n - RECUL_GANTT) * 86_400_000);
-          return { date, rdvs: rdvDuJour(ics, date) };
-        });
-        return { env: a.icsEnv, nom: a.nom, couleur: a.couleur, aujourdhui: rdvDuJour(ics, maintenant), demain: rdvDuJour(ics, demain).map((x) => ({ ...x, passe: false })), periode, erreur: null };
+        // Une seule analyse de l'agenda pour toute la période (c'est l'étape coûteuse) : deux
+        // semaines en arrière pour retrouver le début des chantiers en cours, puis la semaine.
+        const periode = rdvDesJours(await r.text(), debut, RECUL_GANTT + JOURS_GANTT);
+        return {
+          env: a.icsEnv,
+          nom: a.nom,
+          couleur: a.couleur,
+          aujourdhui: periode[RECUL_GANTT].rdvs,
+          demain: periode[RECUL_GANTT + 1].rdvs.map((x) => ({ ...x, passe: false })),
+          periode,
+          erreur: null,
+        };
       } catch {
         // Jamais l'URL dans le message : elle donne un accès permanent à l'agenda.
         return { env: a.icsEnv, nom: a.nom, couleur: a.couleur, aujourdhui: [], demain: [], periode: [], erreur: 'agenda injoignable' };
       }
     })
   );
-  cacheAgendas = { lu: Date.now(), agendas };
-  return agendas;
+}
+
+let rafraichissement: Promise<AgendaLu[]> | null = null;
+
+/** Agendas en mémoire : servis tout de suite ; au-delà de 2 min, relus en arrière-plan (la page
+ *  n'attend pas Google) ; au-delà de 30 min, relus avant d'afficher. */
+async function lireAgendas(config: Config): Promise<AgendaLu[]> {
+  const age = cacheAgendas ? Date.now() - cacheAgendas.lu : Infinity;
+  const relire = () =>
+    (rafraichissement ??= chargerAgendas(config)
+      .then((agendas) => {
+        cacheAgendas = { lu: Date.now(), agendas };
+        return agendas;
+      })
+      .finally(() => {
+        rafraichissement = null;
+      }));
+  if (cacheAgendas && age < 2 * 60_000) return cacheAgendas.agendas;
+  if (cacheAgendas && age < 30 * 60_000) {
+    void relire().catch(() => {});
+    return cacheAgendas.agendas;
+  }
+  return relire();
 }
 
 // --- Pages ----------------------------------------------------------------------

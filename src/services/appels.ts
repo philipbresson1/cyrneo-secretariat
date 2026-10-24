@@ -238,7 +238,7 @@ export function numeroDevis(texte: string): string | null {
 /** Lie la demande de devis à la proposition Dolibarr dont le numéro a été écrit dans le post. */
 async function lierDevis(config: Config, fiche: Intervention, ref: string, log: Journal): Promise<void> {
   if (fiche.dolibarr_ref === ref || !config.dolibarr.url || !process.env.DOLIBARR_API_KEY) return;
-  for (const entite of new Set([entiteDe(config, fiche.societe), ...Object.values(config.dolibarr.entites)])) {
+  for (const entite of entitesPour(config, ref, fiche.societe)) {
     const p = await propositionParRef(config, entite, ref);
     if (!p) continue;
     await db.majIntervention(fiche.id, { dolibarr_ref: p.ref, dolibarr_id: p.id, dolibarr_entite: entite, dolibarr_tiers_id: fiche.dolibarr_tiers_id ?? (p.socid || null), statut: STATUT_DEVIS[p.statut] ?? fiche.statut });
@@ -264,6 +264,16 @@ export async function repriseBulle(config: Config, nom: string, jours: number, l
   return crees;
 }
 
+/** Initiales des sociétés dans les références Dolibarr (I-SA-…, D-ST-…, F-MS-…). */
+export const INITIALES: Record<string, string> = { SA: 'sud-assainissement', ST: 'sud-travaux', MS: 'multiservices-2a', EC: 'entretien-couleurs' };
+
+/** Entités Dolibarr où chercher une référence : celle de ses initiales d'abord, puis la société
+ *  de la fiche, puis les autres. */
+function entitesPour(config: Config, ref: string, societe: string): number[] {
+  const parInitiales = config.dolibarr.entites[INITIALES[ref.split('-')[1] ?? ''] ?? ''];
+  return [...new Set([parInitiales, config.dolibarr.entites[societe], ...Object.values(config.dolibarr.entites)].filter((x): x is number => !!x))];
+}
+
 /** Numéro de BI écrit dans un post : numérotation du groupe (I-SA-260430, I-MS-260088), ou
  *  numérotation Dolibarr par défaut (FI2610-0012). */
 export function numeroBon(texte: string): string | null {
@@ -278,8 +288,7 @@ async function lierBon(config: Config, fiche: Intervention, ref: string, log: Jo
   if (fiche.dolibarr_ref === ref) return;
   let lien: Partial<Intervention> = { dolibarr_ref: ref };
   if (config.dolibarr.url && process.env.DOLIBARR_API_KEY) {
-    const entites = [entiteDe(config, fiche.societe), ...new Set(Object.values(config.dolibarr.entites))];
-    for (const entite of new Set(entites)) {
+    for (const entite of entitesPour(config, ref, fiche.societe)) {
       const b = await bonParRef(config, entite, ref);
       if (b) {
         lien = { dolibarr_ref: b.ref, dolibarr_id: b.id, dolibarr_entite: entite, dolibarr_tiers_id: fiche.dolibarr_tiers_id ?? (b.socid || null) };

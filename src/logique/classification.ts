@@ -32,6 +32,7 @@ export function consignesSysteme(societes: Societe[]): string {
     "- inspectionCamera : true si la demande (intervention ou devis) porte sur une inspection caméra ou ITV de canalisations, sinon false.",
     "- contact : les coordonnées DU CLIENT (jamais celles d'une société du groupe). nom, telephone, email, adresse (lieu de l'intervention), commune. Laisse vide ce qui n'est pas écrit dans le mail : n'invente rien.",
     "Si le mail est transféré par un syndic ou une agence, le contact est la personne à joindre sur place quand elle est indiquée, sinon le syndic.",
+    "Références internes du groupe : I-XX-numéro pour un bon d'intervention, D-XX-numéro pour un devis, F-XX-numéro pour une facture, où XX est la société (SA Sud Assainissement, ST Sud Travaux, MS Multiservices, EC Entretien et Couleurs). Ce ne sont ni des téléphones ni des coordonnées ; une référence I- ou F- citée par le client renvoie à une intervention déjà faite.",
     "Les PDF joints sont fournis avant le mail : lis-les. Un bon de travaux, bon de commande ou ordre de service d'un bailleur (Erilia, OPH…), d'un syndic ou d'une entreprise est une demande_intervention : la nature, l'adresse, le locataire ou le contact sur place y figurent. Un bon qui porte sur une intervention déjà réalisée (pour facturer) est administratif.",
   ].join('\n');
 }
