@@ -124,8 +124,20 @@ function construire(
 
 /** Extrait les rendez-vous du jour, récurrences développées, annulés exclus, triés. */
 export function rdvDuJour(texteIcs: string, maintenant: Date): Rdv[] {
-  const { debut: debutJour, fin: finJour, jour } = bornesDuJour(maintenant);
+  return rdvDuJourAnalyse(ical.sync.parseICS(texteIcs) as unknown as Record<string, EvenementIcs>, maintenant);
+}
+
+/** Rendez-vous de plusieurs jours de suite (l'agenda n'est analysé qu'une fois). */
+export function rdvDesJours(texteIcs: string, premier: Date, jours: number): { date: Date; rdvs: Rdv[] }[] {
   const analyse = ical.sync.parseICS(texteIcs) as unknown as Record<string, EvenementIcs>;
+  return Array.from({ length: jours }, (_, n) => {
+    const date = new Date(premier.getTime() + n * 86_400_000);
+    return { date, rdvs: rdvDuJourAnalyse(analyse, date) };
+  });
+}
+
+function rdvDuJourAnalyse(analyse: Record<string, EvenementIcs>, maintenant: Date): Rdv[] {
+  const { debut: debutJour, fin: finJour, jour } = bornesDuJour(maintenant);
   const rdvs: Rdv[] = [];
 
   for (const evenement of Object.values(analyse)) {

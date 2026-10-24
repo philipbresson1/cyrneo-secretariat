@@ -74,8 +74,10 @@ function societeDeLEntite(config: Config, entite: number): Societe | null {
   return config.societes.find((s) => s.id === id) ?? null;
 }
 
-/** Statut de la fiche d'après celui du bon (0 brouillon, 1 validé, 2 facturé, 3 clôturé). */
-const termine = (b: BonLu) => b.statut >= 2;
+/** Statut de la fiche d'après celui du bon : un bon existe, l'intervention est au planning
+ *  (brouillon) ; validé, facturé ou clôturé, elle est réalisée. Jamais « à planifier ». */
+const STATUT_BON = (statut: number): Intervention['statut'] => (statut === 0 ? 'planifiee' : 'realisee');
+const termine = (b: BonLu) => b.statut >= 1;
 
 function premiereLigne(texte: string): string {
   return texte.replace(/<[^>]+>/g, ' ').split(/\n/).map((l) => l.trim()).find(Boolean)?.slice(0, 120) ?? '';
@@ -84,7 +86,9 @@ function premiereLigne(texte: string): string {
 async function importerBon(config: Config, s: Societe, entite: number, b: BonLu, annoncer: boolean, log: Journal): Promise<void> {
   const liee = await db.interventionDuBon(entite, b.id, b.ref, b.refClient);
   if (liee) {
-    if (!liee.dolibarr_id) await db.majIntervention(liee.id, { dolibarr_id: b.id, dolibarr_entite: entite, dolibarr_ref: b.ref, dolibarr_tiers_id: liee.dolibarr_tiers_id ?? (b.socid || null) });
+    if (!liee.dolibarr_id || liee.statut === 'a_planifier' || liee.statut === 'coordonnees_demandees') {
+      await db.majIntervention(liee.id, { dolibarr_id: b.id, dolibarr_entite: entite, dolibarr_ref: b.ref, dolibarr_tiers_id: liee.dolibarr_tiers_id ?? (b.socid || null), statut: STATUT_BON(b.statut) });
+    }
     return;
   }
   const idx = await indexTiers();
@@ -94,7 +98,7 @@ async function importerBon(config: Config, s: Societe, entite: number, b: BonLu,
   // Même appel déjà écrit dans une bulle : on rattache le bon à cette fiche.
   const semblable = await db.interventionRecenteSemblable(t?.id ?? null, t?.telephone ?? '');
   if (semblable) {
-    await db.majIntervention(semblable.id, champsBon);
+    await db.majIntervention(semblable.id, { ...champsBon, statut: STATUT_BON(b.statut) });
     log(`Bon Dolibarr ${b.ref} rattaché à ${semblable.reference}`);
     return;
   }
@@ -104,7 +108,7 @@ async function importerBon(config: Config, s: Societe, entite: number, b: BonLu,
     cle: `dolibarr:${entite}:${b.id}`,
     type: 'intervention',
     societe: s.id,
-    statut: termine(b) ? 'realisee' : 'a_planifier',
+    statut: STATUT_BON(b.statut),
     urgence: /urgent/i.test(b.description) ? 'urgente' : 'normale',
     client_nom: t?.nom ?? '',
     client_telephone: t?.telephone ?? '',
@@ -131,30 +135,69 @@ const DELAI_BON = 30 * 60_000;
 
 /** Relève les nouveaux bons de chaque société. Au tout premier passage, reprend sans les
  *  annoncer les bons ouverts des 14 derniers jours, puis ne suit que les nouveaux. */
+/** Copie des bons (table dolibarr_bons) : statut réel et « facturation démarrée ». */
+async function copier(s: Societe, entite: number, bons: BonLu[]): Promise<void> {
+  if (!bons.length) return;
+  const idx = await indexTiers();
+  await db.enregistrerBons(
+    bons.map((b) => ({
+      entite,
+      id: b.id,
+      ref: b.ref,
+      societe: s.id,
+      socid: b.socid || null,
+      tiers_nom: idx.tiers.get(b.socid)?.nom ?? '',
+      statut: b.statut,
+      facturation_demarree: b.facturationDemarree,
+      cree_le: b.creeLe.getTime() > 0 ? b.creeLe.toISOString() : null,
+    }))
+  );
+}
+
+/** Fiches liées à un bon : leur statut suit celui du bon (planifiée tant qu'il est en brouillon,
+ *  réalisée dès qu'il est validé). */
+async function suivreStatuts(log: Journal): Promise<void> {
+  const statuts = await db.statutsDesBons();
+  for (const fiche of await db.fichesDeBonsOuvertes()) {
+    const statutBon = statuts.get(`${fiche.dolibarr_entite}:${fiche.dolibarr_id}`);
+    if (statutBon === undefined) continue;
+    const statut = STATUT_BON(statutBon);
+    if (statut !== fiche.statut) {
+      await db.majIntervention(fiche.id, { statut });
+      if (statut === 'realisee') log(`${fiche.reference} réalisée (bon ${fiche.dolibarr_ref} validé dans Dolibarr)`);
+    }
+  }
+}
+
 export async function releverBonsDolibarr(config: Config, log: Journal): Promise<void> {
-  // Clôtures : bons modifiés depuis le dernier contrôle (toutes les 30 min au plus).
+  // Contrôle des bons modifiés (statut, facturation) : toutes les 30 min au plus.
   const controle = await db.lireSynchro('dolibarr_bons_controle');
-  const controleDu = controle ? new Date(controle) : new Date(Date.now() - 86_400_000);
-  const aControler = Date.now() - controleDu.getTime() > 30 * 60_000;
+  const controleDu = controle ? new Date(controle) : null;
+  const aControler = !controleDu || Date.now() - controleDu.getTime() > 30 * 60_000;
+  // Copie complète des bons une seule fois (quelques centaines), ensuite seulement les modifiés.
+  const copieFaite = (await db.lireSynchro('dolibarr_bons_copie')) !== null;
   const debut = new Date();
 
   for (const entite of new Set(Object.values(config.dolibarr.entites))) {
     const s = societeDeLEntite(config, entite);
     if (!s) continue;
+    if (!copieFaite) await copier(s, entite, await lireBons(config, entite, '(t.rowid:>:0)'));
+
     const curseur = `dolibarr_bons_${entite}`;
     const dernier = await db.lireSynchro(curseur);
-    // Le tout premier relevé (fait le 24/10) a posé les curseurs : ensuite, seulement les
-    // bons créés après le dernier n° vu.
     if (dernier === null) {
       const derniers = await lireBons(config, entite, `(t.datec:>=:'${new Date(Date.now() - 14 * 86_400_000).toISOString().slice(0, 10)}')`);
       for (const b of derniers.filter((x) => !termine(x))) {
         await importerBon(config, s, entite, b, false, log).catch((e) => log(`⚠️ Bon Dolibarr ${b.ref} : ${e instanceof Error ? e.message : String(e)}`));
       }
+      await copier(s, entite, derniers);
       await db.ecrireSynchro(curseur, String(Math.max(0, ...derniers.map((b) => b.id))));
       continue;
     }
+    // Nouveaux bons depuis le dernier n° vu.
     let fait = Number(dernier);
-    for (const b of (await lireBons(config, entite, `(t.rowid:>:${fait})`)).sort((x, y) => x.id - y.id)) {
+    const nouveaux = (await lireBons(config, entite, `(t.rowid:>:${fait})`)).sort((x, y) => x.id - y.id);
+    for (const b of nouveaux) {
       // Laisse au bureau le temps d'ajouter le n° du BI à son post Rainbow.
       if (Date.now() - b.creeLe.getTime() < DELAI_BON) break;
       try {
@@ -164,19 +207,16 @@ export async function releverBonsDolibarr(config: Config, log: Journal): Promise
       }
       fait = b.id;
     }
+    await copier(s, entite, nouveaux);
     if (fait > Number(dernier)) await db.ecrireSynchro(curseur, String(fait));
 
-    // Bons clôturés ou facturés dans Dolibarr : la fiche passe en réalisée.
-    if (!aControler) continue;
-    const modifies = await lireBons(config, entite, modifiesDepuis(controleDu));
-    for (const fiche of await db.interventionsAvecBon(entite, modifies.filter(termine).map((b) => b.id))) {
-      if (fiche.statut !== 'realisee' && fiche.statut !== 'annulee') {
-        await db.majIntervention(fiche.id, { statut: 'realisee' });
-        log(`${fiche.reference} réalisée (bon ${fiche.dolibarr_ref} clôturé dans Dolibarr)`);
-      }
-    }
+    if (aControler && controleDu) await copier(s, entite, await lireBons(config, entite, modifiesDepuis(controleDu)));
   }
-  if (aControler) await db.ecrireSynchro('dolibarr_bons_controle', debut.toISOString());
+  if (!copieFaite) await db.ecrireSynchro('dolibarr_bons_copie', debut.toISOString());
+  if (aControler) {
+    await suivreStatuts(log);
+    await db.ecrireSynchro('dolibarr_bons_controle', debut.toISOString());
+  }
 }
 
 /** Société dont c'est la bulle (bulle principale, d'astreinte ou ITV) ; 'test' pour la bulle
@@ -186,8 +226,11 @@ export function societeDeLaBulle(config: Config, bulle: string): Societe | 'test
   return config.societes.find((s) => [s.bulleRainbow, s.bulleUrgence, s.bulleInspection].some((b) => b && memeBulle(b, bulle))) ?? null;
 }
 
-/** Numéro de devis Dolibarr écrit dans un post (PR2610-0041). */
+/** Numéro de devis Dolibarr écrit dans un post : numérotation du groupe (D-ST-260055), ou par
+ *  défaut (PR2610-0041). */
 export function numeroDevis(texte: string): string | null {
+  const groupe = texte.match(/\bD\s?-\s?([A-Z0-9]{2,4})\s?-\s?(\d{5,7})\b/i);
+  if (groupe) return `D-${groupe[1].toUpperCase()}-${groupe[2]}`;
   const m = texte.match(/\bPR\s?-?(\d{4})-(\d{3,5})\b/i);
   return m ? `PR${m[1]}-${m[2]}` : null;
 }
@@ -221,8 +264,11 @@ export async function repriseBulle(config: Config, nom: string, jours: number, l
   return crees;
 }
 
-/** Numéro de BI écrit dans un post (numérotation Dolibarr : FI2610-0012). */
+/** Numéro de BI écrit dans un post : numérotation du groupe (I-SA-260430, I-MS-260088), ou
+ *  numérotation Dolibarr par défaut (FI2610-0012). */
 export function numeroBon(texte: string): string | null {
+  const groupe = texte.match(/\bI\s?-\s?([A-Z0-9]{2,4})\s?-\s?(\d{5,7})\b/i);
+  if (groupe) return `I-${groupe[1].toUpperCase()}-${groupe[2]}`;
   const m = texte.match(/\b(?:FI|BI)\s?-?(\d{4})-(\d{3,5})\b/i);
   return m ? `FI${m[1]}-${m[2]}` : null;
 }
@@ -284,7 +330,7 @@ export async function traiterMessageBulle(config: Config, m: MessageBulle, log: 
     `Ce n'est pas un mail : c'est un post-it écrit par ${m.auteur || 'un membre de l’équipe'} dans la bulle Rainbow « ${m.bulle} » de l'équipe. ` +
     "S'il note une nouvelle demande d'un client (prise au téléphone ou sur place), catégorie demande_intervention ou demande_devis, avec les coordonnées du client. " +
     "Un devis à établir (chiffrage, visite pour devis, « devis à faire ») : demande_devis. Un devis déjà fait, envoyé ou signé : autre. " +
-    "Un numéro de bon d'intervention (FI…) ou de devis (PR…) peut y figurer : ce n'est pas une coordonnée. " +
+    "Un numéro de bon d'intervention (I-SA-…, I-MS-…) ou de devis (D-ST-…) peut y figurer : ce n'est pas une coordonnée. " +
     "Toute autre chose (discussion, planning, suivi ou compte rendu d'une intervention déjà connue, question à un collègue) : catégorie autre.";
   const c: Classification = await classer(pseudo, config, contexte);
   if (c.categorie !== 'demande_devis' && (options.reprise || c.categorie !== 'demande_intervention')) return false;
@@ -294,7 +340,9 @@ export async function traiterMessageBulle(config: Config, m: MessageBulle, log: 
   const tiersId = r?.tiers?.id ?? null;
 
   const devis = c.categorie === 'demande_devis';
-  const deja = devis ? (tiersId ? await db.devisEnCoursDuTiers(tiersId) : null) : await db.interventionRecenteSemblable(tiersId, c.contact.telephone);
+  const deja = devis
+    ? await db.devisEnCoursSemblable(s.id, tiersId, c.contact.telephone, c.contact.nom)
+    : await db.interventionRecenteSemblable(tiersId, c.contact.telephone);
   if (deja) {
     if (bonEcrit && !devis) await lierBon(config, deja, bonEcrit, log);
     if (devisEcrit && devis) await lierDevis(config, deja, devisEcrit, log);

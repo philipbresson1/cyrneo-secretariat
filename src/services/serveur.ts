@@ -14,7 +14,7 @@ import type { Config, Intervention, StatutIntervention } from '../logique/types'
 import { nomPresent } from '../logique/tiers';
 import { LIBELLES_CATEGORIES, type Categorie } from '../logique/types';
 import { decalageParis, estWeekEnd, jourParis as jourParisCle, rdvDuJour, titreComparable, type Rdv } from '../lib/agenda';
-import { chercherJournal, creerInterventionManuelle, dernieresRealisees, devisSignes, historiqueInterventions, interventionsEntre, interventionsOuvertes, majIntervention, type NouvelleDemande } from './stockage';
+import { bonsAFacturer, chercherJournal, creerInterventionManuelle, dernieresRealisees, devisSignes, historiqueInterventions, interventionsEntre, interventionsOuvertes, majIntervention, type NouvelleDemande } from './stockage';
 
 export type Etat = { demarreLe: Date; dernierPassage: Date | null; erreurs: string[]; mode: string };
 
@@ -582,17 +582,20 @@ function lienBureau(url: URL, vue?: string): string {
 async function pageBureau(config: Config, url: URL): Promise<string> {
   const maintenant = Date.now();
   const debut = new Date(maintenant - 3 * 86_400_000);
-  const [{ bons, erreur }, entrees, realisees] = await Promise.all([
+  const [{ bons, erreur }, entrees, realisees, aFacturer] = await Promise.all([
     chargerBons(),
     interventionsEntre(debut, new Date(maintenant + 60_000)).catch(() => null),
     dernieresRealisees().catch(() => null),
+    bonsAFacturer().catch(() => null),
   ]);
-  const nombre = (cle: string) => bons.filter((i) => VUES.find((v) => v.cle === cle)!.filtre(i, maintenant)).length;
+  const nombre = (cle: string) =>
+    cle === 'a_facturer' ? (aFacturer?.length ?? 0) : bons.filter((i) => VUES.find((v) => v.cle === cle)!.filtre(i, maintenant)).length;
+  const vueFacturation = url.searchParams.get('vue') === 'a_facturer';
   const vue = VUES.find((v) => v.cle === url.searchParams.get('vue')) ?? null;
 
   const compteur = (cle: string, libelle: string, classe = '') => {
     const n = nombre(cle);
-    return `<a class="compteur ${n && classe ? classe : ''} ${vue?.cle === cle ? 'choisi' : ''}" href="${lienBureau(url, vue?.cle === cle ? undefined : cle)}"><b>${n}</b><span>${libelle}</span></a>`;
+    return `<a class="compteur ${n && classe ? classe : ''} ${url.searchParams.get('vue') === cle ? 'choisi' : ''}" href="${lienBureau(url, url.searchParams.get('vue') === cle ? undefined : cle)}"><b>${n}</b><span>${libelle}</span></a>`;
   };
   const action = (cle: string, libelle: string, classe: string) => {
     const n = nombre(cle);
@@ -617,7 +620,28 @@ async function pageBureau(config: Config, url: URL): Promise<string> {
 
   const entete = '<div class="appel entete"><span>Heure</span><span></span><span>Client</span><span>Demande</span><span>Lieu</span><span>Statut</span></div>';
   let centre: string;
-  if (vue) {
+  if (vueFacturation) {
+    // BI réalisés (validés ou clôturés) sans « facturation démarrée », par société, les plus anciens d'abord.
+    const parSociete = config.societes
+      .map((x) => ({ s: x, l: (aFacturer ?? []).filter((b) => b.societe === x.id) }))
+      .filter((x) => x.l.length);
+    centre = `<section><h2>Reste à facturer · ${aFacturer?.length ?? 0} BI <a class="retour" href="${lienBureau(url)}">← Retour au cahier</a></h2>
+<div class="liste">${
+      !aFacturer
+        ? '<div class="alerte">Bons Dolibarr indisponibles pour le moment</div>'
+        : parSociete
+            .map(
+              ({ s: soc, l }) =>
+                `<div class="sep">${logo(soc.id)} ${e(soc.nom)} · ${l.length}</div>${l
+                  .map(
+                    (b) =>
+                      `<div class="bon"><div class="l1"><span>${e(b.tiers_nom || 'Client')}</span><span class="age">${b.cree_le ? depuis(b.cree_le) : ''}</span></div><div class="l2">${e(b.ref)}${b.statut === 3 ? ' · clôturé' : ' · validé'}</div></div>`
+                  )
+                  .join('')}`
+            )
+            .join('') || '<div class="vide">Tout est facturé 👍</div>'
+    }</div></section>`;
+  } else if (vue) {
     const lignes = bons.filter((i) => vue.filtre(i, maintenant));
     centre = `<section><h2>${e(vue.titre)} · ${lignes.length} <a class="retour" href="${lienBureau(url)}">← Retour au cahier</a></h2>${entete}
 <div class="liste appels">${erreur ? `<div class="alerte">${e(erreur)}</div>` : lignes.map((i) => ligneAppel(config, i)).join('') || '<div class="vide">Rien ici 👍</div>'}</div></section>`;
@@ -627,13 +651,13 @@ async function pageBureau(config: Config, url: URL): Promise<string> {
 <div class="liste appels">${!entrees ? '<div class="alerte">Cahier indisponible pour le moment</div>' : appels.map((i) => ligneAppel(config, i)).join('') || '<div class="vide">Aucune demande sur 3 jours</div>'}</div></section>`;
   }
 
-  const contenu = `<div class="compteurs">${compteur('a_prevoir', 'à prévoir')}${compteur('urgentes', 'urgentes', 'rouge')}${compteur('retard', 'depuis + 24 h', 'rouge')}${compteur('reclamations', 'réclamations', 'rouge')}${compteur('devis', 'devis à faire', 'bleu')}${compteur('coordonnees', 'sans coordonnées', 'orange')}</div>
+  const contenu = `<div class="compteurs">${compteur('a_prevoir', 'à prévoir')}${compteur('urgentes', 'urgentes', 'rouge')}${compteur('retard', 'depuis + 24 h', 'rouge')}${compteur('reclamations', 'réclamations', 'rouge')}${compteur('devis', 'devis à faire', 'bleu')}${compteur('coordonnees', 'sans coordonnées', 'orange')}${compteur('a_facturer', 'reste à facturer', 'orange')}</div>
 <main class="cahier">${centre}
 <div class="cote">
 <section><h2>À faire</h2>${actions}</section>
 <section class="extensible"><h2>BI finalisés <small>par les agents</small></h2><div class="liste">${faits}</div></section>
 </div></main>`;
-  return pageAffichage(config, 'Bureau CYRNEO', vue ? `Bureau · ${vue.titre}` : 'Bureau', contenu, zoomDe(url), 'clamp(9px,1.15vw,34px)', '/bureau');
+  return pageAffichage(config, 'Bureau CYRNEO', vueFacturation ? 'Bureau · Reste à facturer' : vue ? `Bureau · ${vue.titre}` : 'Bureau', contenu, zoomDe(url), 'clamp(9px,1.15vw,34px)', '/bureau');
 }
 
 const PAGES = [

@@ -24,6 +24,7 @@ const journal = {
 vi.mock('./stockage', () => ({
   interventionsOuvertes: async () => [inter],
   interventionsEntre: async () => [inter],
+  bonsAFacturer: async () => [{ entite: 2, id: 9, ref: 'I-SA-260500', societe: 'sud-assainissement', socid: 5, tiers_nom: 'Camping U Prunelli', statut: 1, facturation_demarree: false, cree_le: '2026-10-20T08:00:00Z' }],
   devisSignes: async () => [{ ref: 'PR2610-0050', societe: 'sud-travaux', tiers_nom: 'SCI Le Lazaret', libelle: 'Réseau EU parking', signe_le: '2026-10-20T10:00:00Z' }],
   dernieresRealisees: async () => [{ ...inter, id: 2, statut: 'realisee', client_nom: 'Mme Leca', dolibarr_ref: 'FI2610-0007', maj_le: '2026-10-23T15:00:00Z' }],
   journalEntre: async () => [journal],
@@ -80,6 +81,11 @@ describe('écran et pages locales', () => {
     expect(travaux).not.toMatch(/€/); // jamais de montant sur les écrans
     expect(travaux).not.toContain('Jean &lt;Martin&gt;'); // inter de Sud Assainissement : pas sur cet écran
     expect(bureau).toContain('href="/travaux"');
+    expect(bureau).toContain('1</b><span>reste à facturer');
+    const facturer = await (await fetch(`${base}/bureau?vue=a_facturer`)).text();
+    expect(facturer).toContain('Reste à facturer');
+    expect(facturer).toContain('Camping U Prunelli');
+    expect(facturer).toContain('I-SA-260500');
     const urgentes = await (await fetch(`${base}/bureau?vue=urgentes&zoom=1.2`)).text();
     expect(urgentes).toContain('Retour au cahier');
     expect(urgentes).toContain('href="/bureau?zoom=1.2"');

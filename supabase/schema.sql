@@ -171,3 +171,22 @@ create policy lecture_devis_signes on dolibarr_devis_signes for select to authen
 -- Surveillance : le démon écrit un signe de vie (secretariat_synchro 'battement') chaque minute ;
 -- pg_cron vérifie toutes les 5 min et prévient par ntfy (téléphone + mail) après 15 min de silence.
 -- Fonction public.surveiller_secretariat() appliquée par migration (sujet ntfy : voir la base).
+
+-- Copie des bons d'intervention Dolibarr : statut réel des fiches et compteur « reste à facturer ».
+create table dolibarr_bons (
+  entite int not null,
+  id bigint not null,
+  ref text not null,
+  societe text not null,
+  socid bigint,
+  tiers_nom text not null default '',
+  statut smallint not null,                 -- 0 brouillon, 1 validé, 2 facturé, 3 clôturé
+  facturation_demarree boolean not null default false,
+  cree_le timestamptz,
+  maj_le timestamptz not null default now(),
+  primary key (entite, id)
+);
+create index idx_bons_a_facturer on dolibarr_bons (societe) where statut in (1, 3) and not facturation_demarree;
+alter table dolibarr_bons enable row level security;
+create policy lecture_bons on dolibarr_bons for select to authenticated
+  using ((select auth.jwt() ->> 'email') = 'philip.bresson1@gmail.com');

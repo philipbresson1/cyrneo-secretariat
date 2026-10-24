@@ -292,6 +292,66 @@ export async function devisSignes(societes: string[]): Promise<{ ref: string; so
   ) as { ref: string; societe: string; tiers_nom: string; libelle: string; signe_le: string | null }[];
 }
 
+export type BonCopie = { entite: number; id: number; ref: string; societe: string; socid: number | null; tiers_nom: string; statut: number; facturation_demarree: boolean; cree_le: string | null };
+
+/** Copie des bons Dolibarr : ajoute ou met à jour. */
+export async function enregistrerBons(bons: BonCopie[]): Promise<void> {
+  for (let i = 0; i < bons.length; i += 500) {
+    verifier(await sb.from('dolibarr_bons').upsert(bons.slice(i, i + 500).map((b) => ({ ...b, maj_le: new Date().toISOString() }))), 'Écriture bons');
+  }
+}
+
+/** Statut Dolibarr des bons liés à des fiches encore ouvertes. */
+export async function fichesDeBonsOuvertes(): Promise<Intervention[]> {
+  return verifier(
+    await sb.from('interventions').select('*').neq('type', 'devis').not('dolibarr_id', 'is', null).in('statut', ['coordonnees_demandees', 'a_planifier', 'planifiee']),
+    'Lecture fiches avec bon'
+  ) as Intervention[];
+}
+
+export async function statutsDesBons(): Promise<Map<string, number>> {
+  const m = new Map<string, number>();
+  for (let de = 0; ; de += 1000) {
+    const data = verifier(await sb.from('dolibarr_bons').select('entite, id, statut').order('id').range(de, de + 999), 'Lecture bons') as { entite: number; id: number; statut: number }[];
+    for (const b of data) m.set(`${b.entite}:${b.id}`, b.statut);
+    if (data.length < 1000) return m;
+  }
+}
+
+/** Bons réalisés (validés ou clôturés) dont la facturation n'est pas démarrée. */
+export async function bonsAFacturer(): Promise<BonCopie[]> {
+  return verifier(
+    await sb.from('dolibarr_bons').select('*').in('statut', [1, 3]).eq('facturation_demarree', false).order('cree_le', { ascending: true }).limit(2000),
+    'Lecture bons à facturer'
+  ) as BonCopie[];
+}
+
+/** Fiches ouvertes encore « à planifier » (pour le rapprochement avec les plannings). */
+export async function fichesAPlanifier(): Promise<Intervention[]> {
+  return verifier(
+    await sb.from('interventions').select('*').neq('type', 'devis').in('statut', ['a_planifier', 'coordonnees_demandees']),
+    'Lecture fiches à planifier'
+  ) as Intervention[];
+}
+
+/** Devis encore à faire, même société, même tiers, même téléphone ou même nom (doublons Rainbow). */
+export async function devisEnCoursSemblable(societe: string, tiersId: number | null, telephone: string, nom: string): Promise<Intervention | null> {
+  const ouverts = verifier(
+    await sb.from('interventions').select('*').eq('type', 'devis').eq('societe', societe).in('statut', ['coordonnees_demandees', 'a_planifier', 'planifiee']),
+    'Lecture devis ouverts'
+  ) as Intervention[];
+  const tel = telephone.replace(/\D/g, '').slice(-9);
+  const norme = (x: string) => x.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\b(m|mme|mr|madame|monsieur)\b/g, '').trim();
+  return (
+    ouverts.find(
+      (d) =>
+        (tiersId && d.dolibarr_tiers_id === tiersId) ||
+        (tel.length === 9 && d.client_telephone.replace(/\D/g, '').slice(-9) === tel) ||
+        (norme(nom).length >= 4 && norme(d.client_nom) === norme(nom))
+    ) ?? null
+  );
+}
+
 export async function lireSynchro(nom: string): Promise<string | null> {
   const data = verifier(await sb.from('secretariat_synchro').select('bilan').eq('nom', nom).maybeSingle(), 'Lecture synchro') as { bilan: string } | null;
   return data?.bilan ?? null;

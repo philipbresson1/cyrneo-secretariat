@@ -31,6 +31,7 @@ import { classer } from './services/classifieur';
 import { genererRapport } from './services/rapport-excel';
 import { envoyer } from './services/smtp';
 import { arreter as arreterRainbow, bullesAttendues, ecouterBulles, listerBulles, publier, type MessageBulle } from './services/rainbow';
+import { rapprocherPlannings } from './services/planning';
 import { releverBonsDolibarr, releverDevisDolibarr, repriseBulle, traiterMessageBulle } from './services/appels';
 import { creerBonIntervention, entiteDe, listerEntites, verifierDroits } from './services/dolibarr';
 import { blocRainbow, reconnaitreTiers, synchroDue, synchroniserTiers } from './services/tiers';
@@ -162,6 +163,7 @@ async function boucle(config: Config): Promise<void> {
   let dernierRappel = '';
   let derniereVerifTiers = 0;
   let derniereReleveDevis = 0;
+  let dernierRapprochement = 0;
 
   // Demandes notées dans les bulles : traitées une par une, dans l'ordre d'arrivée.
   // Signe de vie chaque minute : la base alerte (téléphone + mail) s'il manque depuis 15 min.
@@ -216,6 +218,12 @@ async function boucle(config: Config): Promise<void> {
       } catch (e) {
         log(`⚠️ Synchro des tiers Dolibarr : ${e instanceof Error ? e.message : String(e)}`);
       }
+    }
+
+    // Demandes « à planifier » déjà au planning d'une équipe : passées en planifiées (15 min).
+    if (Date.now() - dernierRapprochement > 15 * 60_000) {
+      dernierRapprochement = Date.now();
+      await rapprocherPlannings(config, log).catch((e) => log(`⚠️ Rapprochement plannings : ${e instanceof Error ? e.message : String(e)}`));
     }
 
     if (dolibarrPret()) {

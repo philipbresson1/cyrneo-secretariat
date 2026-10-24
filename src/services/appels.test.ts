@@ -16,6 +16,10 @@ const db = vi.hoisted(() => ({
   devisOuvertsSansProposition: vi.fn(async () => [] as unknown[]),
   remplacerDevisSignes: vi.fn(),
   majDevisSignes: vi.fn(),
+  enregistrerBons: vi.fn(),
+  statutsDesBons: vi.fn(async () => new Map<string, number>()),
+  fichesDeBonsOuvertes: vi.fn(async () => [] as unknown[]),
+  devisEnCoursSemblable: vi.fn(async () => null),
   devisEnCoursDuTiers: vi.fn(async () => null),
 }));
 const bons = vi.hoisted(() => ({ liste: [] as unknown[], modifies: [] as unknown[], synchro: {} as Record<string, string>, propositions: [] as { id: number; ref: string; socid: number; statut: number; creeLe: Date; signeLe: Date | null; libelle: string; refClient: string }[] }));
@@ -51,7 +55,7 @@ beforeEach(() => {
   index.courant = indexer([{ id: 5, nom: 'Résidence Les Pins', alias: '', code_client: 'CU5', code_fournisseur: '', siret: '', tva_intra: '', adresse: 'Route des Sanguinaires', cp: '20000', ville: 'Ajaccio', telephone: '04 95 00 00 00', email: '', parent_id: null, client: 1, fournisseur: 0, actif: true, note_publique: '', note_privee: '' }], []);
 });
 
-import { numeroBon, releverBonsDolibarr, releverDevisDolibarr, societeDeLaBulle, traiterMessageBulle } from './appels';
+import { numeroBon, numeroDevis, releverBonsDolibarr, releverDevisDolibarr, societeDeLaBulle, traiterMessageBulle } from './appels';
 
 const config = validerConfig({ ...exemple, mode: 'reel', dolibarr: { ...exemple.dolibarr, entites: { 'sud-assainissement': 2 } } });
 const bon = (id: number, jours = 1, statut = 0) => ({ id, ref: `FI${id}`, socid: 5, description: 'Vidange fosse\nurgent', statut, creeLe: new Date(Date.now() - jours * 86_400_000), refClient: '' });
@@ -61,6 +65,7 @@ beforeEach(() => {
   bons.synchro = {};
   bons.modifies = [];
   db.lireSynchro.mockImplementation(async (nom: string) => bons.synchro[nom] ?? null);
+  bons.synchro.dolibarr_bons_copie = new Date().toISOString(); // copie complète déjà faite
 });
 
 describe('aller-retour Dolibarr', () => {
@@ -175,16 +180,29 @@ describe('aller-retour Dolibarr', () => {
   });
 
 
-  it('clôtures : seuls les bons modifiés depuis le dernier contrôle sont relus', async () => {
+  it('statut des fiches : bon validé → réalisée, d’après la copie des bons relue sur les seuls bons modifiés', async () => {
     bons.synchro.dolibarr_bons_2 = '20';
     bons.synchro.dolibarr_bons_controle = new Date(Date.now() - 3_600_000).toISOString();
     bons.liste = [];
-    bons.modifies = [bon(15, 3, 3)];
-    db.interventionsAvecBon.mockResolvedValueOnce([{ id: 4, reference: 'INT-2026-0004', statut: 'a_planifier', dolibarr_ref: 'FI15' }] as never);
+    bons.modifies = [{ ...bon(15, 3, 1), facturationDemarree: false }];
+    db.statutsDesBons.mockResolvedValueOnce(new Map([['2:15', 1]]));
+    db.fichesDeBonsOuvertes.mockResolvedValueOnce([{ id: 4, reference: 'INT-2026-0004', statut: 'planifiee', dolibarr_entite: 2, dolibarr_id: 15, dolibarr_ref: 'I-SA-260015' }] as never);
     await releverBonsDolibarr(config, () => {});
-    expect(db.interventionsAvecBon).toHaveBeenCalledWith(2, [15]);
+    expect(db.enregistrerBons).toHaveBeenCalledWith([expect.objectContaining({ entite: 2, id: 15, statut: 1, facturation_demarree: false, tiers_nom: 'Résidence Les Pins' })]);
     expect(db.majIntervention).toHaveBeenCalledWith(4, { statut: 'realisee' });
     expect(db.ecrireSynchro).toHaveBeenCalledWith('dolibarr_bons_controle', expect.any(String));
+  });
+
+  it('BI en brouillon : la fiche est « planifiée », jamais « à planifier »', async () => {
+    bons.synchro.dolibarr_bons_2 = '12';
+    bons.liste = [bon(13)];
+    await releverBonsDolibarr(config, () => {});
+    expect(db.creerInterventionTelephone).toHaveBeenCalledWith(expect.objectContaining({ dolibarr_id: 13, statut: 'planifiee' }));
+  });
+
+  it('lit les n° du groupe dans un post (I-SA-…, D-ST-…)', () => {
+    expect(numeroBon('Vidange Mme Leca — I-SA-260534')).toBe('I-SA-260534');
+    expect(numeroDevis('devis fait : D-ST-260055')).toBe('D-ST-260055');
   });
 
   it('devis : relevé des seules propositions modifiées, la liste des signés est mise à jour sans tout remplacer', async () => {

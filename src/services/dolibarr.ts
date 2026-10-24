@@ -187,22 +187,46 @@ export async function lireUnTiers(config: Config, entite: number, id: number): P
   }
 }
 
-export type BonLu = { id: number; ref: string; socid: number; description: string; statut: number; creeLe: Date; refClient: string };
+export type BonLu = {
+  id: number;
+  ref: string;
+  socid: number;
+  description: string;
+  statut: number; // 0 brouillon, 1 validé, 2 facturé, 3 clôturé
+  creeLe: Date;
+  refClient: string;
+  facturationDemarree: boolean;
+};
 
-/** Derniers bons d'intervention d'une société, du plus récent au plus ancien. */
+const VRAI = (v: unknown) => v === true || v === 1 || /^(1|oui|yes|true)$/i.test(String(v ?? '').trim());
+
+/** « Facturation démarrée » : bon classé facturé, ou case à cocher Dolibarr (champ
+ *  complémentaire dont le nom contient « factur »). */
+export function facturationDemarree(b: Record<string, unknown>, statut: number): boolean {
+  if (statut === 2) return true;
+  const options = (b.array_options ?? {}) as Record<string, unknown>;
+  return Object.entries(options).some(([cle, v]) => /factur/i.test(cle) && VRAI(v));
+}
+
 /** Bons d'intervention d'une société répondant au filtre (nouveaux depuis un n°, ou modifiés
  *  depuis une date) : jamais la liste entière. */
-export async function lireBons(config: Config, entite: number, sqlfilters: string): Promise<BonLu[]> {
-  const liste = await toutLire<Record<string, unknown>>(config, entite, '/interventions', sqlfilters);
-  return liste.map((b) => ({
+function versBon(b: Record<string, unknown>): BonLu {
+  const statut = Number(b.statut ?? b.fk_statut ?? b.status) || 0;
+  return {
     id: Number(b.id),
     ref: texte(b.ref),
     socid: Number(b.socid) || 0,
     description: texte(b.description),
-    statut: Number(b.statut ?? b.fk_statut ?? b.status) || 0,
+    statut,
     creeLe: new Date(Number(b.datec ?? b.date_creation ?? 0) * 1000),
     refClient: texte(b.ref_client),
-  }));
+    facturationDemarree: facturationDemarree(b, statut),
+  };
+}
+
+export async function lireBons(config: Config, entite: number, sqlfilters: string): Promise<BonLu[]> {
+  const liste = await toutLire<Record<string, unknown>>(config, entite, '/interventions', sqlfilters);
+  return liste.map(versBon);
 }
 
 export type PropositionLue = { id: number; ref: string; socid: number; statut: number; creeLe: Date; signeLe: Date | null; libelle: string; refClient: string };
@@ -238,7 +262,7 @@ export async function lirePropositions(config: Config, entite: number, depuis: D
   });
 }
 
-/** Proposition commerciale par sa référence (ex. PR2610-0041), ou null. */
+/** Proposition commerciale par sa référence (ex. D-ST-260055), ou null. */
 export async function propositionParRef(config: Config, entite: number, ref: string): Promise<{ id: number; ref: string; socid: number; statut: number } | null> {
   try {
     const liste = await appel<Record<string, unknown>[]>(config, entite, 'GET', `/proposals?limit=1&sqlfilters=${encodeURIComponent(`(t.ref:=:'${ref.replace(/[^\w-]/g, '')}')`)}`);
@@ -250,12 +274,12 @@ export async function propositionParRef(config: Config, entite: number, ref: str
   }
 }
 
-/** Bon d'intervention par sa référence (ex. FI2610-0012), ou null. */
+/** Bon d'intervention par sa référence (ex. I-SA-260430), ou null. */
 export async function bonParRef(config: Config, entite: number, ref: string): Promise<BonLu | null> {
   try {
     const liste = await appel<Record<string, unknown>[]>(config, entite, 'GET', `/interventions?limit=1&sqlfilters=${encodeURIComponent(`(t.ref:=:'${ref.replace(/[^\w-]/g, '')}')`)}`);
     const b = liste?.[0];
-    return b ? { id: Number(b.id), ref: texte(b.ref), socid: Number(b.socid) || 0, description: texte(b.description), statut: Number(b.statut ?? b.fk_statut ?? b.status) || 0, creeLe: new Date(Number(b.datec ?? 0) * 1000), refClient: texte(b.ref_client) } : null;
+    return b ? versBon(b) : null;
   } catch (e) {
     if (e instanceof ErreurDolibarr && e.statut === 404) return null;
     throw e;
