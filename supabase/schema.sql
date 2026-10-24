@@ -191,7 +191,8 @@ alter table dolibarr_bons enable row level security;
 create policy lecture_bons on dolibarr_bons for select to authenticated
   using ((select auth.jwt() ->> 'email') = 'philip.bresson1@gmail.com');
 
--- Contrats d'entretien à proposer : vidange de fosse facturée → contrat 2 ans (grille du site).
+-- Contrats d'entretien proposés : vidange de fosse facturée → contrat 2 ans (grille du site),
+-- brouillon Dolibarr, fichier Relances contrats envoyé au bureau.
 create table contrats_proposes (
   id bigint generated always as identity primary key,
   entite int not null,
@@ -210,9 +211,15 @@ create table contrats_proposes (
   acces_loin boolean not null default false,
   vidange_ttc numeric(10,2),
   mensualite numeric(10,2),
-  statut text not null default 'a_completer', -- a_completer, pret, envoye, ecarte
+  statut text not null default 'a_completer', -- a_completer, pret, emis, signe, abandonne, ecarte
   lien text,
   note text not null default '',
+  dolibarr_contrat_id bigint,               -- contrat Sud Assainissement en brouillon (validé = signé)
+  dolibarr_contrat_ref text,
+  rum text,
+  total_ttc numeric(10,2),
+  emis_le timestamptz,
+  signe_le timestamptz,
   cree_le timestamptz not null default now(),
   maj_le timestamptz not null default now(),
   unique (entite, facture_id)

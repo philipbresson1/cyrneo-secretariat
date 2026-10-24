@@ -485,3 +485,62 @@ export async function contratActif(config: Config, entite: number, socid: number
     return null;
   }
 }
+
+let utilisateurApi: number | null = null;
+async function idUtilisateurApi(config: Config): Promise<number> {
+  utilisateurApi ??= Number((await appel<{ id: number | string }>(config, 1, 'GET', '/users/info')).id);
+  return utilisateurApi;
+}
+
+/** Contrat d'entretien en brouillon (module Contrats) : une ligne « mensualité » × durée.
+ *  TVA 2,10 % (CGV du contrat type) ; prix saisi HT d'après la mensualité TTC. */
+export async function creerContratBrouillon(
+  config: Config,
+  entite: number,
+  socid: number,
+  c: { libelle: string; mensualiteTtc: number; mois: number; note: string }
+): Promise<{ id: number; ref: string }> {
+  const moi = await idUtilisateurApi(config);
+  const maintenant = Math.floor(Date.now() / 1000);
+  const id = await appel<number>(config, entite, 'POST', '/contracts', {
+    socid,
+    date_contrat: maintenant,
+    commercial_signature_id: moi,
+    commercial_suivi_id: moi,
+    ref_customer: 'Contrat entretien fosse 2 ans',
+    note_private: c.note,
+  });
+  await appel(config, entite, 'POST', `/contracts/${id}/lines`, {
+    desc: c.libelle,
+    subprice: Math.round((c.mensualiteTtc / 1.021) * 10000) / 10000,
+    qty: c.mois,
+    tva_tx: 2.1,
+    product_type: 1,
+  });
+  const lu = await appel<{ ref?: string }>(config, entite, 'GET', `/contracts/${id}`);
+  return { id: Number(id), ref: lu.ref ?? `(PROV${id})` };
+}
+
+/** Statut d'un contrat : 0 brouillon, 1 validé (signé), 2 clôturé ; null s'il a été supprimé. */
+export async function statutContrat(config: Config, entite: number, id: number): Promise<number | null> {
+  try {
+    const c = await appel<Record<string, unknown>>(config, entite, 'GET', `/contracts/${id}`);
+    return Number(c.statut ?? c.status ?? 0);
+  } catch (e) {
+    if (e instanceof ErreurDolibarr && e.statut === 404) return null;
+    throw e;
+  }
+}
+
+export async function deposerDocument(config: Config, entite: number, modulepart: string, ref: string, nom: string, contenu: Buffer): Promise<void> {
+  await appel(config, entite, 'POST', '/documents/upload', {
+    filename: nom.replace(/[^\w.\- ]/g, '_'),
+    modulepart,
+    ref,
+    subdir: '',
+    filecontent: contenu.toString('base64'),
+    fileencoding: 'base64',
+    overwriteifexists: 1,
+    createdirifnotexists: 1,
+  });
+}

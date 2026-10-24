@@ -170,7 +170,7 @@
       { "chemin": "/travaux", "titre": "Sud Travaux · Entretien et Couleurs", "societes": ["sud-travaux", "entretien-couleurs"] }
     ]
   },
-  "contrats": { "societes": ["sud-assainissement"] },
+  "contrats": { "societes": ["sud-assainissement"], "destinataires": ["info@groupecyrneo.com", "commercial@groupecyrneo.com"] },
   "rappels": {
     "actif": true,
     "heure": "17:00",

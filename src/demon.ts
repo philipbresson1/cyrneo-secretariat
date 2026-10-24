@@ -280,8 +280,8 @@ async function boucle(config: Config): Promise<void> {
       }
     }
 
-    // Factures émises de la veille relues chaque matin : vidange de fosse → contrat 2 ans à proposer.
-    if (dolibarrPret() && heure >= '06:30' && dernieresFactures !== jour) {
+    // Factures émises relues chaque matin : vidange de fosse → contrat 2 ans (brouillon Dolibarr, mail au bureau).
+    if (dolibarrPret() && config.mode === 'reel' && heure >= '06:30' && dernieresFactures !== jour) {
       dernieresFactures = jour;
       if ((await lireSynchro(`contrats:${jour}`).catch(() => null)) === null) {
         try {
@@ -468,8 +468,9 @@ async function principal() {
     }
     case 'contrats': {
       // npm start -- contrats : relit les factures émises et prépare les contrats à proposer
-      const bilan = await relireFacturesEmises(config, (t) => console.log(t));
-      console.log(bilan.length ? `${bilan.length} contrat(s) à proposer : page Contrats.` : 'Aucune nouvelle vidange de fosse facturée sans contrat.');
+      // En mode test : rien n'est écrit, le mail (fichier, contrats, mandats) part à l'adresse de test.
+      const bilan = await relireFacturesEmises(config, (t) => console.log(t), { forcerMail: true });
+      console.log(bilan.length ? `${bilan.length} proposition(s) de contrat :\n${bilan.join('\n')}` : 'Aucune nouvelle vidange de fosse facturée sans contrat.');
       await arreterRainbow();
       process.exit(0);
     }

@@ -636,9 +636,15 @@ export type ContratPropose = {
   acces_loin: boolean;
   vidange_ttc: number | null;
   mensualite: number | null;
-  statut: 'a_completer' | 'pret' | 'envoye' | 'ecarte';
+  statut: 'a_completer' | 'pret' | 'emis' | 'signe' | 'abandonne' | 'ecarte';
   lien: string | null;
   note: string;
+  dolibarr_contrat_id: number | null;
+  dolibarr_contrat_ref: string | null;
+  rum: string | null;
+  total_ttc: number | null;
+  emis_le: string | null;
+  signe_le: string | null;
   cree_le: string;
 };
 
@@ -671,10 +677,12 @@ export async function contratPropose(id: number): Promise<ContratPropose | null>
   return verifier(await sb.from('contrats_proposes').select('*').eq('id', id).maybeSingle(), 'Lecture contrat proposé') as ContratPropose | null;
 }
 
-/** Contrats à traiter (à compléter ou prêts), puis les envoyés récents. */
+/** Toutes les propositions de contrat (hors écartées). */
 export async function contratsProposes(): Promise<ContratPropose[]> {
-  return verifier(
-    await sb.from('contrats_proposes').select('*').neq('statut', 'ecarte').order('cree_le', { ascending: false }).limit(200),
-    'Lecture contrats proposés'
-  ) as ContratPropose[];
+  const tout: ContratPropose[] = [];
+  for (let de = 0; ; de += 1000) {
+    const lot = verifier(await sb.from('contrats_proposes').select('*').neq('statut', 'ecarte').order('id').range(de, de + 999), 'Lecture contrats proposés') as ContratPropose[];
+    tout.push(...lot);
+    if (lot.length < 1000) return tout;
+  }
 }
