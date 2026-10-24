@@ -60,6 +60,9 @@ export function validerConfig(brut: unknown): Config {
   }
   // Sans colonnes définies : une colonne par agenda.
   if (!c.ecran.colonnes.length) c.ecran.colonnes = c.agendas.map((a) => ({ titre: a.nom, agendas: [a.icsEnv] }));
+  for (const so of c.societes) {
+    if (so.agendaRdv && c.agendas.length && !c.agendas.some((a) => a.icsEnv === so.agendaRdv)) erreurs.push(`société ${so.id} : agendaRdv « ${so.agendaRdv} » absent de la liste agendas`);
+  }
   for (const v of c.ecran.vues ?? []) {
     if (!/^\/[a-z0-9-]+$/.test(v.chemin)) erreurs.push(`ecran.vues : chemin « ${v.chemin} » invalide (ex. /travaux)`);
     for (const id of v.societes) if (!c.societes.some((x) => x.id === id)) erreurs.push(`ecran.vues ${v.chemin} : société « ${id} » inconnue`);

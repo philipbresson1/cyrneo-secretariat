@@ -48,6 +48,7 @@
     },
     {
       "id": "sud-assainissement",
+      "agendaRdv": "AGENDA_ICS_DEBOUCHAGE_SA",
       "nom": "Sud Assainissement",
       "metier": "vidange de fosses, débouchage, hydrocurage, inspection caméra, bacs à graisse, contrats d'entretien",
       "telephone": "04 95 23 02 84",
@@ -61,6 +62,7 @@
     },
     {
       "id": "sud-travaux",
+      "agendaRdv": "AGENDA_ICS_SUD_TRAVAUX",
       "nom": "Sud Travaux",
       "metier": "VRD, terrassement, pose de fosses et de micro-stations",
       "telephone": "",
@@ -83,6 +85,7 @@
     },
     {
       "id": "corse-3d",
+      "agendaRdv": "AGENDA_ICS_AGENT_MS2A",
       "nom": "Corse 3D",
       "metier": "dératisation, désinsectisation, désinfection",
       "telephone": "",
@@ -94,6 +97,7 @@
     },
     {
       "id": "multiservices-2a",
+      "agendaRdv": "AGENDA_ICS_AGENT_MS2A",
       "nom": "Multiservices 2A",
       "metier": "nettoyage, entretien de copropriétés, espaces verts",
       "telephone": "",
@@ -105,6 +109,7 @@
     },
     {
       "id": "entretien-couleurs",
+      "agendaRdv": "AGENDA_ICS_ENTRETIEN_COULEURS",
       "nom": "Entretien et Couleurs",
       "metier": "second œuvre : placo, peinture, sols",
       "telephone": "",
@@ -117,11 +122,11 @@
   ],
   "transferts": [],
   "agendas": [
-    { "nom": "Débouchage", "icsEnv": "AGENDA_ICS_DEBOUCHAGE_SA", "couleur": "#ef4444", "societe": "sud-assainissement" },
-    { "nom": "Agents", "icsEnv": "AGENDA_ICS_AGENT_SA", "couleur": "#2563eb", "societe": "sud-assainissement" },
-    { "nom": "Agent Multiservices 2A", "icsEnv": "AGENDA_ICS_AGENT_MS2A", "couleur": "#16a34a", "societe": "multiservices-2a" },
-    { "nom": "Entretien et Couleurs", "icsEnv": "AGENDA_ICS_ENTRETIEN_COULEURS", "couleur": "#f59e0b", "societe": "entretien-couleurs" },
-    { "nom": "Sud Travaux", "icsEnv": "AGENDA_ICS_SUD_TRAVAUX", "couleur": "#a855f7", "societe": "sud-travaux" }
+    { "nom": "Débouchage", "icsEnv": "AGENDA_ICS_DEBOUCHAGE_SA", "calendrier": "debouchagesudassai@gmail.com", "couleur": "#ef4444", "societe": "sud-assainissement" },
+    { "nom": "Agents", "icsEnv": "AGENDA_ICS_AGENT_SA", "calendrier": "agent.sudassai@gmail.com", "couleur": "#2563eb", "societe": "sud-assainissement" },
+    { "nom": "Agent Multiservices 2A", "icsEnv": "AGENDA_ICS_AGENT_MS2A", "calendrier": "agent.ms2a@gmail.com", "couleur": "#16a34a", "societe": "multiservices-2a" },
+    { "nom": "Entretien et Couleurs", "icsEnv": "AGENDA_ICS_ENTRETIEN_COULEURS", "calendrier": "entretienetcouleurs@gmail.com", "couleur": "#f59e0b", "societe": "entretien-couleurs" },
+    { "nom": "Sud Travaux", "icsEnv": "AGENDA_ICS_SUD_TRAVAUX", "calendrier": "sas.sudtravaux@gmail.com", "couleur": "#a855f7", "societe": "sud-travaux" }
   ],
   "dossiers": {
     "factures": "C:/Cyrneo/Factures a saisir",

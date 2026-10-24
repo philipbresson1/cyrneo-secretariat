@@ -12,10 +12,12 @@
 import type { Classification, Config, Intervention, MailRecu, Societe } from '../logique/types';
 import { choisirBulle } from '../logique/decision';
 import { classer } from './classifieur';
-import { bonParRef, entiteDe, lireBons, lirePropositions, modifiesDepuis, propositionParRef, type BonLu } from './dolibarr';
+import { bonParRef, creerBonIntervention, creerClient, entiteDe, lireBons, lirePropositions, modifiesDepuis, propositionParRef, type BonLu } from './dolibarr';
+import { agendaGoogleConfigure, inscrire } from './google-agenda';
+import { decalageParis } from '../lib/agenda';
 import { historiqueBulle, memeBulle, publier, type MessageBulle } from './rainbow';
 import * as db from './stockage';
-import { blocRainbow, indexTiers, reconnaitreTiers, tiersParId, type TiersReconnu } from './tiers';
+import { ajouterTiersLocal, blocRainbow, indexTiers, reconnaitreTiers, tiersParId, type TiersReconnu } from './tiers';
 import { nomPresent } from '../logique/tiers';
 
 type Journal = (texte: string) => void;
@@ -379,12 +381,106 @@ export async function traiterMessageBulle(config: Config, m: MessageBulle, log: 
   log(`Post dans « ${m.bulle} » → ${fiche.reference}`);
   if (bonEcrit && !devis) await lierBon(config, fiche, bonEcrit, log);
   if (devisEcrit && devis) await lierDevis(config, fiche, devisEcrit, log);
+  // Demande d'intervention notée le soir pour le lendemain, etc. : client, BI et planning.
+  const suites = !devis && !options.reprise ? await enregistrerDansLesOutils(config, s, fiche, c, r, !!bonEcrit, m.auteur, log) : [];
 
   if (repondre) {
     await publier(
       m.bulle,
-      [`✅ ${fiche.reference} · ${s.nom}${bonEcrit && !devis ? ` · bon ${bonEcrit}` : ''}`, r && r.index.tiers.size > 0 ? blocRainbow(r) : ''].filter(Boolean).join('\n')
+      [`✅ ${fiche.reference} · ${s.nom}${bonEcrit && !devis ? ` · bon ${bonEcrit}` : ''}`, r && r.index.tiers.size > 0 ? blocRainbow(r) : '', ...suites].filter(Boolean).join('\n')
     );
   }
   return true;
+}
+
+const fmtCreneau = (creneau: string) =>
+  new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }).format(
+    new Date(`${creneau}:00${decalageParis(new Date(`${creneau}:00Z`))}`)
+  );
+
+/** Demande d'intervention notée dans une bulle : le client dans Dolibarr (créé s'il n'existe pas,
+ *  jamais au nom du syndic), le BI en brouillon, puis le rappel ou le RDV dans l'agenda de la
+ *  société. Écritures en mode réel seulement (en test : on dit ce qui serait fait). Renvoie les
+ *  lignes à ajouter à la réponse dans la bulle. */
+export async function enregistrerDansLesOutils(
+  config: Config,
+  s: Societe,
+  fiche: Intervention,
+  c: Classification,
+  r: TiersReconnu | null,
+  bonDejaFait: boolean,
+  auteur: string,
+  log: Journal
+): Promise<string[]> {
+  const lignes: string[] = [];
+  const reel = config.mode === 'reel';
+  const dolibarr = reel && config.dolibarr.actif && !!config.dolibarr.url && !!process.env.DOLIBARR_API_KEY && s.id in config.dolibarr.entites;
+  let tiersId = r?.tiers?.id ?? null;
+  let bonRef = '';
+
+  if (!bonDejaFait) {
+    const entite = config.dolibarr.entites[s.id];
+    if (!tiersId && r?.possibles.length) lignes.push('⚠️ Plusieurs clients possibles dans Dolibarr : BI à faire à la main');
+    else if (!tiersId && (!c.contact.nom || (r?.syndic && nomPresent(r.syndic.nom, c.contact.nom)))) lignes.push('⚠️ Nom du client à préciser : BI à faire à la main');
+    else if (!tiersId) {
+      if (dolibarr) {
+        try {
+          tiersId = await creerClient(config, entite, c.contact, r?.syndic?.id ?? null);
+          await ajouterTiersLocal({
+            id: tiersId, nom: c.contact.nom, alias: '', code_client: '', code_fournisseur: '', siret: '', tva_intra: '', adresse: c.contact.adresse, cp: '', ville: c.contact.commune,
+            telephone: c.contact.telephone, email: c.contact.email.toLowerCase(), parent_id: r?.syndic?.id ?? null, client: 1, fournisseur: 0, actif: true, note_publique: '', note_privee: '',
+          });
+          lignes.push(`👤 Nouveau client créé dans Dolibarr : ${c.contact.nom}`);
+        } catch (e) {
+          lignes.push(`⚠️ Client non créé dans Dolibarr (${e instanceof Error ? e.message : String(e)}) : BI à faire à la main`);
+        }
+      } else lignes.push(`🧪 Client à créer dans Dolibarr : ${c.contact.nom}`);
+    }
+    if (tiersId) {
+      if (dolibarr) {
+        try {
+          const bon = await creerBonIntervention(config, entite, tiersId, c, fiche.reference);
+          bonRef = bon.ref;
+          fiche = await db.majIntervention(fiche.id, { dolibarr_id: bon.id, dolibarr_entite: entite, dolibarr_ref: bon.ref, dolibarr_tiers_id: tiersId, statut: 'planifiee' });
+          lignes.push(`🧾 BI ${bon.ref} créé (brouillon)`);
+        } catch (e) {
+          lignes.push(`⚠️ BI non créé (${e instanceof Error ? e.message : String(e)}) : à faire à la main`);
+        }
+      } else lignes.push('🧪 BI qui serait créé en brouillon');
+    }
+  }
+
+  if (c.creneau) {
+    const agenda = config.agendas.find((a) => a.icsEnv === s.agendaRdv);
+    const calendrier = reel ? agenda?.calendrier : config.test.calendrier;
+    const quoi = c.creneauType === 'rappel' ? 'Rappel' : 'RDV';
+    const quand = fmtCreneau(c.creneau);
+    if (!agenda) lignes.push(`⚠️ Pas d'agenda de planning pour ${s.nom} : ${quoi.toLowerCase()} du ${quand} à inscrire à la main`);
+    else if (!calendrier || !agendaGoogleConfigure()) lignes.push(`${reel ? '⚠️' : '🧪'} ${quoi} ${reel ? 'à inscrire à la main' : 'qui serait inscrit'} au planning ${agenda.nom} : ${quand}`);
+    else {
+      try {
+        const nom = fiche.client_nom || c.contact.nom || 'Client';
+        await inscrire(calendrier, {
+          titre: c.creneauType === 'rappel' ? `📞 À rappeler — ${nom} — ${fiche.nature}` : `${fiche.nature} — ${nom}`,
+          description: [
+            fiche.client_telephone ? `Tél. ${fiche.client_telephone}` : '',
+            [fiche.adresse, fiche.commune].filter(Boolean).join(', '),
+            c.resume,
+            `${fiche.reference}${bonRef || fiche.dolibarr_ref ? ` · ${bonRef || fiche.dolibarr_ref}` : ''} · noté par ${auteur || 'l’équipe'} dans Rainbow`,
+          ]
+            .filter(Boolean)
+            .join('\n'),
+          lieu: [fiche.adresse, fiche.commune].filter(Boolean).join(', '),
+          debut: c.creneau,
+          minutes: c.creneauType === 'rappel' ? 15 : 60,
+        });
+        await db.majIntervention(fiche.id, { statut: 'planifiee', date_prevue: new Date(`${c.creneau}:00${decalageParis(new Date(`${c.creneau}:00Z`))}`).toISOString() });
+        lignes.push(`📅 ${quoi} inscrit au planning ${agenda.nom}${reel ? '' : ' (agenda de test)'} : ${quand}`);
+        log(`${fiche.reference} : ${quoi.toLowerCase()} inscrit au planning ${agenda.nom} (${c.creneau})`);
+      } catch (e) {
+        lignes.push(`⚠️ ${quoi} non inscrit au planning (${e instanceof Error ? e.message : String(e)}) : à faire à la main`);
+      }
+    }
+  }
+  return lignes;
 }

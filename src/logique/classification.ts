@@ -29,6 +29,8 @@ export function consignesSysteme(societes: Societe[]): string {
     "- resume : une phrase courte et concrète, comme un collègue la noterait sur un post-it.",
     "- nature : ce qu'il faut faire, en quelques mots (ex. « vidange fosse 3 m³ », « débouchage évier »).",
     "- dateSouhaitee : la date ou la période voulue par le client, telle qu'il l'écrit. Vide sinon.",
+    "- creneau : si une date ET une heure précises sont données pour rappeler le client ou pour intervenir (« à rappeler demain 8h », « RDV lundi 14h »), au format AAAA-MM-JJTHH:MM en heure de Paris, calculées d'après la date de réception ; sinon vide.",
+    "- creneauType : 'rappel' si ce créneau sert à rappeler le client, 'intervention' si c'est le rendez-vous d'intervention, vide sans créneau.",
     "- inspectionCamera : true si la demande (intervention ou devis) porte sur une inspection caméra ou ITV de canalisations, sinon false.",
     "- contact : les coordonnées DU CLIENT (jamais celles d'une société du groupe). nom, telephone, email, adresse (lieu de l'intervention), commune. Laisse vide ce qui n'est pas écrit dans le mail : n'invente rien.",
     "Si le mail est transféré par un syndic ou une agence, le contact est la personne à joindre sur place quand elle est indiquée, sinon le syndic.",
@@ -44,7 +46,8 @@ export function construireMessage(mail: MailRecu, contexte: string | null): stri
     `Boîte de réception : ${mail.boite}`,
     `De : ${mail.deNom ? `${mail.deNom} <${mail.deAdresse}>` : mail.deAdresse}`,
     `Sujet : ${mail.sujet}`,
-    `Reçu le : ${mail.recuLe.toISOString()}`,
+    // Heure de Paris, jour de la semaine compris : « demain 8h » se calcule sans erreur de fuseau.
+    `Reçu le : ${new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', weekday: 'long', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(mail.recuLe)} (heure de Paris)`,
     pj ? `Pièces jointes : ${pj}` : 'Pièces jointes : aucune',
     contexte ? `Contexte : ${contexte}` : '',
     '',
@@ -67,6 +70,8 @@ export function schemaSortie(societes: Societe[]) {
       nature: CHAINE,
       dateSouhaitee: CHAINE,
       inspectionCamera: { type: 'boolean' },
+      creneau: CHAINE,
+      creneauType: { type: 'string', enum: ['', 'rappel', 'intervention'] },
       contact: {
         type: 'object',
         properties: { nom: CHAINE, telephone: CHAINE, email: CHAINE, adresse: CHAINE, commune: CHAINE },
@@ -74,7 +79,7 @@ export function schemaSortie(societes: Societe[]) {
         additionalProperties: false,
       },
     },
-    required: ['categorie', 'societe', 'urgence', 'resume', 'nature', 'dateSouhaitee', 'inspectionCamera', 'contact'],
+    required: ['categorie', 'societe', 'urgence', 'resume', 'nature', 'dateSouhaitee', 'inspectionCamera', 'creneau', 'creneauType', 'contact'],
     additionalProperties: false,
   };
 }
@@ -109,6 +114,8 @@ export function lireClassification(json: string, mail: MailRecu, societes: Socie
     nature: texte(brut.nature),
     dateSouhaitee: texte(brut.dateSouhaitee),
     inspectionCamera: brut.inspectionCamera === true,
+    creneau: /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(texte(brut.creneau)) ? texte(brut.creneau) : '',
+    creneauType: brut.creneauType === 'rappel' || brut.creneauType === 'intervention' ? brut.creneauType : '',
     contact: {
       nom: texte(c.nom) || mail.deNom,
       // Le numéro doit exister dans le mail : on ne promet pas de rappeler un numéro inventé.

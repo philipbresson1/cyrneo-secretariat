@@ -313,7 +313,30 @@ export async function creerBonIntervention(config: Config, entite: number, socid
   return { id: Number(id), ref: bon.ref ?? `#${id}` };
 }
 
-/** Crée un fournisseur (seule création de tiers autorisée : demandée pour les factures). */
+/** Crée un client : la personne, l'entreprise ou la résidence où l'on intervient, jamais le
+ *  syndic ; rattaché au syndic quand il est connu (maison mère). */
+export async function creerClient(
+  config: Config,
+  entite: number,
+  c: { nom: string; telephone: string; email: string; adresse: string; commune: string },
+  syndicId: number | null
+): Promise<number> {
+  const id = await appel<number>(config, entite, 'POST', '/thirdparties', {
+    name: c.nom,
+    client: 1,
+    code_client: 'auto',
+    phone: c.telephone.replace(/\s/g, '') || undefined,
+    email: c.email || undefined,
+    address: c.adresse || undefined,
+    town: c.commune || undefined,
+    parent: syndicId || undefined,
+    country_code: 'FR',
+    note_private: 'Créé automatiquement par le secrétariat CYRNEO à partir d’une demande notée dans Rainbow.',
+  });
+  return Number(id);
+}
+
+/** Crée un fournisseur (factures reçues). */
 export async function creerFournisseur(config: Config, entite: number, f: FournisseurLu): Promise<number> {
   const id = await appel<number>(config, entite, 'POST', '/thirdparties', {
     name: f.nom,

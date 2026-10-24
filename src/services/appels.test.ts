@@ -38,7 +38,11 @@ vi.mock('./dolibarr', async () => ({
   }),
   lirePropositions: vi.fn(async () => bons.propositions),
   bonParRef: vi.fn(async (_c: unknown, entite: number, ref: string) => (entite === 2 ? { id: 99, ref, socid: 5 } : null)),
+  creerClient: vi.fn(async () => 777),
+  creerBonIntervention: vi.fn(async () => ({ id: 700, ref: 'I-SA-260700' })),
 }));
+const inscrire = vi.hoisted(() => vi.fn(async () => 'https://calendar.google.com/x'));
+vi.mock('./google-agenda', () => ({ inscrire, agendaGoogleConfigure: () => true }));
 const classer = vi.hoisted(() => vi.fn());
 vi.mock('./classifieur', () => ({ classer }));
 const index = vi.hoisted(() => ({ courant: null as unknown }));
@@ -49,13 +53,14 @@ vi.mock('./tiers', async () => ({
     return { tiers: i.tiers.get(5), syndic: null, possibles: [], index: i };
   }),
   indexTiers: vi.fn(async () => index.courant),
+  ajouterTiersLocal: vi.fn(),
   tiersParId: vi.fn(async (_c: unknown, _e: number, id: number) => (index.courant as ReturnType<typeof indexer>).tiers.get(id) ?? null),
 }));
 beforeEach(() => {
   index.courant = indexer([{ id: 5, nom: 'Résidence Les Pins', alias: '', code_client: 'CU5', code_fournisseur: '', siret: '', tva_intra: '', adresse: 'Route des Sanguinaires', cp: '20000', ville: 'Ajaccio', telephone: '04 95 00 00 00', email: '', parent_id: null, client: 1, fournisseur: 0, actif: true, note_publique: '', note_privee: '' }], []);
 });
 
-import { numeroBon, numeroDevis, releverBonsDolibarr, releverDevisDolibarr, societeDeLaBulle, traiterMessageBulle } from './appels';
+import { enregistrerDansLesOutils, numeroBon, numeroDevis, releverBonsDolibarr, releverDevisDolibarr, societeDeLaBulle, traiterMessageBulle } from './appels';
 
 const config = validerConfig({ ...exemple, mode: 'reel', dolibarr: { ...exemple.dolibarr, entites: { 'sud-assainissement': 2 } } });
 const bon = (id: number, jours = 1, statut = 0) => ({ id, ref: `FI${id}`, socid: 5, description: 'Vidange fosse\nurgent', statut, creeLe: new Date(Date.now() - jours * 86_400_000), refClient: '' });
@@ -215,5 +220,34 @@ describe('aller-retour Dolibarr', () => {
     expect(db.remplacerDevisSignes).not.toHaveBeenCalled();
     expect(db.majDevisSignes).toHaveBeenCalledWith(2, [expect.objectContaining({ id: 50, ref: 'PR50' })], [51]);
     expect(db.ecrireSynchro).toHaveBeenCalledWith('dolibarr_devis', expect.any(String));
+  });
+
+  it('post du soir « à rappeler demain 8h » : client créé, BI en brouillon, rappel au planning Débouchage', async () => {
+    process.env.DOLIBARR_API_KEY = 'cle';
+    const reel = { ...config, dolibarr: { ...config.dolibarr, actif: true, url: 'https://doli.fr', entites: { 'sud-assainissement': 2 } } };
+    const c = {
+      categorie: 'demande_intervention' as const, societe: 'sud-assainissement', urgence: 'normale' as const, resume: 'WC bouchés', nature: 'débouchage WC', dateSouhaitee: 'demain',
+      inspectionCamera: false, creneau: '2026-10-25T08:00', creneauType: 'rappel' as const,
+      contact: { nom: 'Mme Rossi', telephone: '06 01 02 03 04', email: '', adresse: '3 rue Fesch', commune: 'Ajaccio' },
+    };
+    const fiche = { id: 42, reference: 'INT-2026-0200', client_nom: 'Mme Rossi', client_telephone: '06 01 02 03 04', adresse: '3 rue Fesch', commune: 'Ajaccio', nature: 'débouchage WC', dolibarr_ref: null } as never;
+    db.majIntervention.mockImplementation(async (_id: number, champs: object) => ({ ...(fiche as object), ...champs }));
+    const lignes = await enregistrerDansLesOutils(reel, reel.societes.find((x) => x.id === 'sud-assainissement')!, fiche, c, { tiers: null, syndic: null, possibles: [], index: index.courant } as never, false, 'Philip', () => {});
+    expect(lignes).toEqual([
+      '👤 Nouveau client créé dans Dolibarr : Mme Rossi',
+      '🧾 BI I-SA-260700 créé (brouillon)',
+      expect.stringMatching(/^📅 Rappel inscrit au planning Débouchage : dimanche 25 octobre (à )?08:00$/),
+    ]);
+    expect(inscrire).toHaveBeenCalledWith('debouchagesudassai@gmail.com', expect.objectContaining({ titre: '📞 À rappeler — Mme Rossi — débouchage WC', debut: '2026-10-25T08:00', minutes: 15 }));
+    expect((inscrire.mock.calls[0] as unknown[])[1]).toMatchObject({ description: expect.stringContaining('INT-2026-0200 · I-SA-260700') });
+    expect(db.majIntervention).toHaveBeenCalledWith(42, expect.objectContaining({ statut: 'planifiee', date_prevue: '2026-10-25T07:00:00.000Z' }));
+  });
+
+  it('en mode test : rien n’est écrit, la réponse dit ce qui serait fait', async () => {
+    const c = { categorie: 'demande_intervention' as const, societe: 'sud-assainissement', urgence: 'normale' as const, resume: '', nature: 'débouchage', dateSouhaitee: '', inspectionCamera: false, creneau: '2026-10-25T08:00', creneauType: 'rappel' as const, contact: { nom: 'Mme Rossi', telephone: '', email: '', adresse: '', commune: '' } };
+    const lignes = await enregistrerDansLesOutils({ ...config, mode: 'test' }, config.societes.find((x) => x.id === 'sud-assainissement')!, { id: 1, reference: 'INT-1' } as never, c, null, false, '', () => {});
+    expect(lignes[0]).toBe('🧪 Client à créer dans Dolibarr : Mme Rossi');
+    expect(lignes[1]).toMatch(/^🧪 Rappel qui serait inscrit au planning Débouchage/);
+    expect(inscrire).not.toHaveBeenCalled();
   });
 });

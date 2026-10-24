@@ -54,6 +54,7 @@ export type Societe = {
   bulleRainbow: string; // nom exact de la bulle Rainbow
   bulleUrgence?: string; // bulle d'astreinte : demandes d'intervention hors heures ouvrées
   bulleInspection?: string; // bulle des demandes d'inspection caméra (intervention ou devis)
+  agendaRdv?: string; // agenda (icsEnv) où inscrire ses rendez-vous et rappels
   delaiRappel: string; // ex. « dans la journée »
   delaiDevis: string; // ex. « sous 48 h »
   alerteSecours: string[]; // adresses prévenues par mail si Rainbow est indisponible
@@ -75,7 +76,13 @@ export type RegleTransfert = {
   vers: string[];
 };
 
-export type Agenda = { nom: string; icsEnv: string; couleur: string; societe?: string };
+export type Agenda = {
+  nom: string;
+  icsEnv: string;
+  couleur: string;
+  societe?: string;
+  calendrier?: string; // identifiant Google de l'agenda (son adresse), pour y inscrire des RDV
+};
 
 export type Config = {
   mode: Mode;
@@ -92,7 +99,7 @@ export type Config = {
   rapport: { heure: string; destinataires: string[] };
   /** Rappel de rendez-vous envoyé aux clients la veille, d'après les plannings. */
   rappels: { actif: boolean; heure: string; boite: string };
-  test: { bulleRainbow: string; adresse: string };
+  test: { bulleRainbow: string; adresse: string; calendrier?: string }; // calendrier : agenda Google des essais
   serveur: { port: number; ecranPublic: boolean };
   modele: string; // lecture des PDF (factures, pièces jointes), rappels, rapprochements
   modeleTri: string; // tri des mails et posts Rainbow sans PDF : gros volume, tâche simple
@@ -145,6 +152,8 @@ export type Classification = {
   nature: string;
   dateSouhaitee: string;
   inspectionCamera: boolean; // la demande porte sur une inspection caméra (ITV) de canalisations
+  creneau?: string; // date et heure précises données (AAAA-MM-JJTHH:MM, heure de Paris), sinon ''
+  creneauType?: 'rappel' | 'intervention' | ''; // ce créneau : rappeler le client, ou intervenir
   contact: Contact;
 };
 
