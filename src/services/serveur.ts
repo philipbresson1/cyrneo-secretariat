@@ -14,6 +14,8 @@ import type { Config, Intervention, StatutIntervention } from '../logique/types'
 import { nomPresent } from '../logique/tiers';
 import { LIBELLES_CATEGORIES, type Categorie } from '../logique/types';
 import { decalageParis, estWeekEnd, rdvDesJours, titreComparable, type Rdv } from '../lib/agenda';
+import { chargerGrille, completerContrat, envoyerContrat } from './contrats';
+import { contratsProposes, majContratPropose, type ContratPropose } from './stockage';
 import { bonsAFacturer, chercherJournal, creerInterventionManuelle, dernieresRealisees, devisSignes, historiqueInterventions, interventionsEntre, interventionsOuvertes, majIntervention, type NouvelleDemande } from './stockage';
 
 export type Etat = { demarreLe: Date; dernierPassage: Date | null; erreurs: string[]; mode: string };
@@ -688,6 +690,7 @@ const PAGES = [
   { chemin: '/equipes', libelle: 'Tableau agents' },
   { chemin: '/bureau', libelle: 'Admin' },
   { chemin: '/interventions', libelle: 'Historique' },
+  { chemin: '/contrats', libelle: 'Contrats' },
   { chemin: '/journal', libelle: 'Journal' },
 ];
 
@@ -737,6 +740,40 @@ async function pageInterventions(config: Config, tout = false): Promise<string> 
     `${nav(config, '/interventions', 'Historique')}<main>${formulaire}
 <div class="outils"><div class="onglets">${onglets}</div><span class="doux">${inters.length} demande${inters.length > 1 ? 's' : ''}${tout ? ' (300 dernières)' : ''}</span></div>
 <div class="carte"><table><tr><th>Réf.</th><th>Société</th><th>Client</th><th>Lieu</th><th>Demande</th><th>Statut</th><th>Suivi</th></tr>${lignes || '<tr><td colspan="7" class="vide">Rien en cours</td></tr>'}</table></div></main>`
+  );
+}
+
+const STATUTS_CONTRAT: Record<ContratPropose['statut'], string> = { a_completer: 'à compléter', pret: 'prêt à envoyer', envoye: 'envoyé', ecarte: 'écarté' };
+
+/** Contrats d'entretien proposés après une vidange facturée : le bureau complète, relit (lien du
+ *  contrat tel que le client le verra) et envoie, ou écarte. */
+async function pageContrats(config: Config, message = ''): Promise<string> {
+  const [contrats, grille] = await Promise.all([contratsProposes(), chargerGrille().catch(() => null)]);
+  const secteurs = Object.keys(grille?.GRILLE ?? {});
+  const lignes = contrats
+    .map((c) => {
+      const options = ['', ...secteurs].map((z) => `<option value="${e(z)}"${z === (c.secteur ?? '') ? ' selected' : ''}>${e(z || 'Secteur…')}</option>`).join('');
+      const volumes = ['', '3', '4', '5', '6'].map((v) => `<option value="${v}"${v === String(c.volume ?? '') ? ' selected' : ''}>${v ? `${v} m³` : 'Volume…'}</option>`).join('');
+      const actions =
+        c.statut === 'envoye'
+          ? `<span class="doux">envoyé${c.lien ? ` · <a href="${e(c.lien)}" target="_blank">voir</a>` : ''}</span>`
+          : `<form class="suivi" method="post" action="/contrats/${c.id}"><input name="email" placeholder="Email du client" value="${e(c.email)}"><select name="secteur">${options}</select><select name="volume">${volumes}</select>
+<label class="doux"><input type="checkbox" name="acces_loin"${c.acces_loin ? ' checked' : ''}> accès + 20 m</label><button>Enregistrer</button></form>
+<form class="suivi" method="post" action="/contrats/${c.id}/envoyer"${c.statut === 'pret' ? '' : ' hidden'}><button>📨 Envoyer au client${config.mode === 'reel' ? '' : ' (test)'}</button>${c.lien ? ` <a href="${e(c.lien)}" target="_blank">Relire le contrat</a>` : ''}</form>
+<form class="suivi" method="post" action="/contrats/${c.id}/ecarter"><button>Écarter</button></form>`;
+      return `<tr><td data-l="Facture"><span class="ref">${e(c.facture_ref)}</span><br><span class="doux">${c.facture_le ? e(fmtComplet.format(new Date(c.facture_le))) : ''}</span></td>
+<td data-l="Client"><span class="qui">${e(c.client_nom)}</span><br>${e(c.telephone)}<br><span class="doux">${e(c.email)}</span></td>
+<td data-l="Fosse">${e([c.adresse, [c.cp, c.ville].filter(Boolean).join(' ')].filter(Boolean).join(', '))}<br>${c.volume ? `${c.volume} m³` : '?'} · ${e(c.secteur ?? 'secteur ?')}${c.acces_loin ? ' · accès + 20 m' : ''}</td>
+<td data-l="Contrat 2 ans">${c.mensualite ? `${e(String(c.mensualite).replace('.', ','))} € TTC / mois<br><span class="doux">vidange ${e(String(c.vidange_ttc))} € lissée sur 24 mois</span>` : '—'}</td>
+<td data-l="Statut"><span class="statut ${c.statut === 'pret' ? 'planifiee' : c.statut === 'envoye' ? 'realisee' : 'a_planifier'}">${STATUTS_CONTRAT[c.statut]}</span>${c.note ? `<br><span class="doux">${e(c.note)}</span>` : ''}</td>
+<td data-l="Actions">${actions}</td></tr>`;
+    })
+    .join('');
+  return page(
+    'Contrats',
+    `${nav(config, '/contrats', 'Contrats d’entretien')}<main>${message ? `<div class="carte" style="padding:.8rem 1rem">${e(message)}</div>` : ''}
+<div class="outils"><span class="doux">Vidanges de fosse facturées → contrat d’entretien 2 ans (grille du site, contrat seul : il finance la prochaine vidange). Rien ne part sans le bouton « Envoyer ».</span></div>
+<div class="carte"><table><tr><th>Facture</th><th>Client</th><th>Fosse</th><th>Contrat 2 ans</th><th>Statut</th><th>Actions</th></tr>${lignes || '<tr><td colspan="6" class="vide">Aucun contrat à proposer</td></tr>'}</table></div></main>`
   );
 }
 
@@ -881,6 +918,24 @@ export async function gererRequete(req: http.IncomingMessage, res: http.ServerRe
         intervenant: f.get('intervenant')?.trim() || null,
       });
       res.writeHead(303, { Location: '/interventions' });
+      res.end();
+      return;
+    }
+    if (url.pathname === '/contrats' && req.method === 'GET') return envoyer(200, await pageContrats(config, url.searchParams.get('m') ?? ''), entetesCle);
+    const mc = /^\/contrats\/(\d+)(?:\/(envoyer|ecarter))?$/.exec(url.pathname);
+    if (mc && req.method === 'POST') {
+      const id = Number(mc[1]);
+      let message = '';
+      try {
+        if (mc[2] === 'envoyer') {
+          const c = await envoyerContrat(config, id);
+          message = config.mode === 'reel' ? `Contrat envoyé à ${c.email}` : `Mode test : contrat envoyé à ${config.test.adresse}, pas au client`;
+        } else if (mc[2] === 'ecarter') await majContratPropose(id, { statut: 'ecarte' });
+        else await completerContrat(id, await lireCorps(req));
+      } catch (err) {
+        message = `⚠️ ${err instanceof Error ? err.message : String(err)}`;
+      }
+      res.writeHead(303, { Location: `/contrats${message ? `?m=${encodeURIComponent(message)}` : ''}` });
       res.end();
       return;
     }

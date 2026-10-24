@@ -453,3 +453,35 @@ export async function creerFactureFournisseur(
   });
   return { id, ref };
 }
+
+export type FactureEmise = { id: number; ref: string; socid: number; date: Date; ttc: number; lignes: { texte: string; ttc: number }[] };
+
+/** Factures clients validées (pas les avoirs) : modifiées depuis une date, ou émises depuis
+ *  `premier` au tout premier relevé. */
+export async function lireFacturesEmises(config: Config, entite: number, depuis: Date | null, premier: Date): Promise<FactureEmise[]> {
+  const filtre = depuis ? modifiesDepuis(depuis) : `(t.datef:>=:'${premier.toISOString().slice(0, 10)}')`;
+  const liste = await toutLire<Record<string, unknown>>(config, entite, '/invoices', `${filtre} and (t.fk_statut:>:0) and (t.type:=:0)`);
+  return liste.map((f) => ({
+    id: Number(f.id),
+    ref: texte(f.ref),
+    socid: Number(f.socid) || 0,
+    date: new Date(Number(f.date ?? f.datef ?? 0) * 1000),
+    ttc: Number(f.total_ttc) || 0,
+    lignes: ((f.lines as Record<string, unknown>[] | undefined) ?? []).map((l) => ({
+      texte: [l.product_label, l.label, l.desc, l.description].map(texte).filter(Boolean).join(' '),
+      ttc: Number(l.total_ttc) || 0,
+    })),
+  }));
+}
+
+/** Le tiers a-t-il déjà un contrat actif dans Dolibarr (module Contrats) ? null si le module ne
+ *  répond pas. */
+export async function contratActif(config: Config, entite: number, socid: number): Promise<boolean | null> {
+  try {
+    const liste = (await appel<Record<string, unknown>[]>(config, entite, 'GET', `/contracts?thirdparty_ids=${socid}&limit=50`)) ?? [];
+    return liste.some((c) => Number(c.statut ?? c.status) === 1 && Number(c.nbofservicesopened ?? 1) > 0);
+  } catch (e) {
+    if (e instanceof ErreurDolibarr && e.statut === 404) return false;
+    return null;
+  }
+}

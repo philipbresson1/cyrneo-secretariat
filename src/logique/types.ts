@@ -117,6 +117,8 @@ export type Config = {
     vues?: { chemin: string; titre: string; societes: string[] }[];
   };
   heuresOuvrees: { debut: string; fin: string };
+  /** Relecture des factures émises : sociétés dont les vidanges facturées donnent un contrat à proposer. */
+  contrats?: { societes: string[] };
 };
 
 export type PieceJointe = { nom: string; type: string; taille: number; contenu: Buffer };

@@ -617,3 +617,64 @@ export async function emailParTelephone(tel: string): Promise<string | null> {
   ) as { client_email: string }[];
   return data && data.length > 0 ? data[0].client_email : null;
 }
+
+export type ContratPropose = {
+  id: number;
+  entite: number;
+  facture_id: number;
+  facture_ref: string;
+  facture_le: string | null;
+  tiers_id: number;
+  client_nom: string;
+  email: string;
+  telephone: string;
+  adresse: string;
+  cp: string;
+  ville: string;
+  secteur: string | null;
+  volume: number | null;
+  acces_loin: boolean;
+  vidange_ttc: number | null;
+  mensualite: number | null;
+  statut: 'a_completer' | 'pret' | 'envoye' | 'ecarte';
+  lien: string | null;
+  note: string;
+  cree_le: string;
+};
+
+/** Contrat déjà proposé à ce tiers depuis deux ans (ou pour cette facture) ? */
+export async function contratDejaPropose(entite: number, tiersId: number, factureId: number): Promise<boolean> {
+  const data = verifier(
+    await sb
+      .from('contrats_proposes')
+      .select('id')
+      .eq('entite', entite)
+      .or(`facture_id.eq.${factureId},and(tiers_id.eq.${tiersId},cree_le.gte.${new Date(Date.now() - 730 * 86_400_000).toISOString()})`)
+      .limit(1),
+    'Lecture contrats proposés'
+  ) as { id: number }[];
+  return data.length > 0;
+}
+
+export async function ajouterContratPropose(c: Omit<ContratPropose, 'id' | 'cree_le'>): Promise<ContratPropose> {
+  return verifier(await sb.from('contrats_proposes').insert(c).select('*').single(), 'Ajout contrat proposé') as ContratPropose;
+}
+
+export async function majContratPropose(id: number, champs: Partial<Omit<ContratPropose, 'id'>>): Promise<ContratPropose> {
+  return verifier(
+    await sb.from('contrats_proposes').update({ ...champs, maj_le: new Date().toISOString() }).eq('id', id).select('*').single(),
+    'Mise à jour contrat proposé'
+  ) as ContratPropose;
+}
+
+export async function contratPropose(id: number): Promise<ContratPropose | null> {
+  return verifier(await sb.from('contrats_proposes').select('*').eq('id', id).maybeSingle(), 'Lecture contrat proposé') as ContratPropose | null;
+}
+
+/** Contrats à traiter (à compléter ou prêts), puis les envoyés récents. */
+export async function contratsProposes(): Promise<ContratPropose[]> {
+  return verifier(
+    await sb.from('contrats_proposes').select('*').neq('statut', 'ecarte').order('cree_le', { ascending: false }).limit(200),
+    'Lecture contrats proposés'
+  ) as ContratPropose[];
+}

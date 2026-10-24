@@ -170,6 +170,7 @@
       { "chemin": "/travaux", "titre": "Sud Travaux · Entretien et Couleurs", "societes": ["sud-travaux", "entretien-couleurs"] }
     ]
   },
+  "contrats": { "societes": ["sud-assainissement"] },
   "rappels": {
     "actif": true,
     "heure": "17:00",

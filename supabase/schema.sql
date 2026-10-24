@@ -190,3 +190,34 @@ create index idx_bons_a_facturer on dolibarr_bons (societe) where statut in (1, 
 alter table dolibarr_bons enable row level security;
 create policy lecture_bons on dolibarr_bons for select to authenticated
   using ((select auth.jwt() ->> 'email') = 'philip.bresson1@gmail.com');
+
+-- Contrats d'entretien à proposer : vidange de fosse facturée → contrat 2 ans (grille du site).
+create table contrats_proposes (
+  id bigint generated always as identity primary key,
+  entite int not null,
+  facture_id bigint not null,
+  facture_ref text not null,
+  facture_le timestamptz,
+  tiers_id bigint not null,
+  client_nom text not null default '',
+  email text not null default '',
+  telephone text not null default '',
+  adresse text not null default '',
+  cp text not null default '',
+  ville text not null default '',
+  secteur text,
+  volume smallint,
+  acces_loin boolean not null default false,
+  vidange_ttc numeric(10,2),
+  mensualite numeric(10,2),
+  statut text not null default 'a_completer', -- a_completer, pret, envoye, ecarte
+  lien text,
+  note text not null default '',
+  cree_le timestamptz not null default now(),
+  maj_le timestamptz not null default now(),
+  unique (entite, facture_id)
+);
+create index idx_contrats_tiers on contrats_proposes (entite, tiers_id);
+alter table contrats_proposes enable row level security;
+create policy lecture_contrats on contrats_proposes for select to authenticated
+  using ((select auth.jwt() ->> 'email') = 'philip.bresson1@gmail.com');

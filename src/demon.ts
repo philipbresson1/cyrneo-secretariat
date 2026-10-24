@@ -33,6 +33,7 @@ import { envoyer } from './services/smtp';
 import { arreter as arreterRainbow, bullesAttendues, ecouterBulles, listerBulles, publier, type MessageBulle } from './services/rainbow';
 import { rapprocherPlannings } from './services/planning';
 import { preparerBonsDuLendemain } from './services/veille';
+import { relireFacturesEmises } from './services/contrats';
 import { releverBonsDolibarr, releverDevisDolibarr, repriseBulle, traiterMessageBulle } from './services/appels';
 import { bonParRef, creerBonIntervention, entiteDe, lireBonBrut, listerEntites, verifierDroits } from './services/dolibarr';
 import { blocRainbow, reconnaitreTiers, synchroDue, synchroniserTiers } from './services/tiers';
@@ -166,6 +167,7 @@ async function boucle(config: Config): Promise<void> {
   let derniereReleveDevis = 0;
   let dernierRapprochement = 0;
   let derniereVeille = '';
+  let dernieresFactures = '';
 
   // Demandes notées dans les bulles : traitées une par une, dans l'ordre d'arrivée.
   // Signe de vie chaque minute : la base alerte (téléphone + mail) s'il manque depuis 15 min.
@@ -274,6 +276,19 @@ async function boucle(config: Config): Promise<void> {
           await ecrireSynchro(`veille:${passe}`, bilan.length ? `${bilan.length} société(s)` : 'rien');
         } catch (e) {
           log(`⚠️ BI du planning : ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+    }
+
+    // Factures émises de la veille relues chaque matin : vidange de fosse → contrat 2 ans à proposer.
+    if (dolibarrPret() && heure >= '06:30' && dernieresFactures !== jour) {
+      dernieresFactures = jour;
+      if ((await lireSynchro(`contrats:${jour}`).catch(() => null)) === null) {
+        try {
+          const bilan = await relireFacturesEmises(config, log);
+          await ecrireSynchro(`contrats:${jour}`, `${bilan.length} contrat(s) à proposer`);
+        } catch (e) {
+          log(`⚠️ Relecture des factures émises : ${e instanceof Error ? e.message : String(e)}`);
         }
       }
     }
@@ -451,6 +466,13 @@ async function principal() {
       await arreterRainbow();
       process.exit(0);
     }
+    case 'contrats': {
+      // npm start -- contrats : relit les factures émises et prépare les contrats à proposer
+      const bilan = await relireFacturesEmises(config, (t) => console.log(t));
+      console.log(bilan.length ? `${bilan.length} contrat(s) à proposer : page Contrats.` : 'Aucune nouvelle vidange de fosse facturée sans contrat.');
+      await arreterRainbow();
+      process.exit(0);
+    }
     case 'dates-bon': {
       // npm start -- dates-bon I-SA-260430 : où ce bon porte sa date (pour régler dolibarr.champDateBon)
       if (!argument) throw new Error('Usage : npm start -- dates-bon I-SA-260430');
@@ -497,7 +519,7 @@ async function principal() {
       return;
     }
     default:
-      throw new Error(`Commande inconnue « ${commande} » (demarrer, une-fois, essai, essai-bon, bons-veille, dates-bon, tiers, devis, reprise-rainbow, rapport, bulles, dolibarr, verifier, rappels)`);
+      throw new Error(`Commande inconnue « ${commande} » (demarrer, une-fois, essai, essai-bon, bons-veille, dates-bon, contrats, tiers, devis, reprise-rainbow, rapport, bulles, dolibarr, verifier, rappels)`);
   }
 }
 
