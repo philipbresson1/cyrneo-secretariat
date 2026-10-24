@@ -19,6 +19,7 @@ const env = chargerEnv({ path: '.env.local', quiet: true });
 
 import { readFile, access, readdir } from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { simpleParser } from 'mailparser';
 import type { Classification, Config, MailRecu } from './logique/types';
 import { appliquerEnv, validerConfig } from './logique/config';
@@ -163,6 +164,14 @@ async function boucle(config: Config): Promise<void> {
   let derniereReleveDevis = 0;
 
   // Demandes notées dans les bulles : traitées une par une, dans l'ordre d'arrivée.
+  // Signe de vie chaque minute : la base alerte (téléphone + mail) s'il manque depuis 15 min.
+  const battement = () =>
+    ecrireSynchro('battement', JSON.stringify({ mode: config.mode, poste: os.hostname(), depuis: etat.demarreLe.toISOString() })).catch((e) =>
+      log(`⚠️ Signe de vie non écrit : ${e instanceof Error ? e.message : String(e)}`)
+    );
+  void battement();
+  setInterval(() => void battement(), 60_000).unref();
+
   let file: Promise<unknown> = Promise.resolve();
   const surMessage = (m: MessageBulle) => {
     file = file.then(() => traiterMessageBulle(config, m, log)).catch((e) => log(`⚠️ Message Rainbow « ${m.bulle} » : ${e instanceof Error ? e.message : String(e)}`));

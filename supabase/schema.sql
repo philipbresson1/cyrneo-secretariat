@@ -167,3 +167,7 @@ create table dolibarr_devis_signes (
 alter table dolibarr_devis_signes enable row level security;
 create policy lecture_devis_signes on dolibarr_devis_signes for select to authenticated
   using ((select auth.jwt() ->> 'email') = 'philip.bresson1@gmail.com');
+
+-- Surveillance : le démon écrit un signe de vie (secretariat_synchro 'battement') chaque minute ;
+-- pg_cron vérifie toutes les 5 min et prévient par ntfy (téléphone + mail) après 15 min de silence.
+-- Fonction public.surveiller_secretariat() appliquée par migration (sujet ntfy : voir la base).
