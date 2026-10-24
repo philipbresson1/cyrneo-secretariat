@@ -12,10 +12,10 @@
 import type { Classification, Config, Intervention, MailRecu, Societe } from '../logique/types';
 import { choisirBulle } from '../logique/decision';
 import { classer } from './classifieur';
-import { bonParRef, entiteDe, lireBonsRecents, lirePropositions, propositionParRef, type BonLu } from './dolibarr';
+import { bonParRef, entiteDe, lireBons, lirePropositions, modifiesDepuis, propositionParRef, type BonLu } from './dolibarr';
 import { historiqueBulle, memeBulle, publier, type MessageBulle } from './rainbow';
 import * as db from './stockage';
-import { blocRainbow, indexTiers, reconnaitreTiers, type TiersReconnu } from './tiers';
+import { blocRainbow, indexTiers, reconnaitreTiers, tiersParId, type TiersReconnu } from './tiers';
 import { nomPresent } from '../logique/tiers';
 
 type Journal = (texte: string) => void;
@@ -29,10 +29,15 @@ const STATUT_DEVIS: Record<number, Intervention['statut']> = { 0: 'a_planifier',
  *  acceptés à planifier ». */
 export async function releverDevisDolibarr(config: Config, log: Journal): Promise<void> {
   const idx = await indexTiers();
+  // Seulement les propositions modifiées depuis le dernier relevé (jamais toute la base).
+  const depuisTexte = await db.lireSynchro('dolibarr_devis');
+  const depuis = depuisTexte ? new Date(depuisTexte) : null;
+  const debut = new Date();
   for (const entite of new Set(Object.values(config.dolibarr.entites))) {
     const s = societeDeLEntite(config, entite);
     if (!s) continue;
-    const recentes = await lirePropositions(config, entite, false);
+    const recentes = await lirePropositions(config, entite, depuis);
+    if (recentes.length === 0) continue;
     const parId = new Map(recentes.map((p) => [p.id, p]));
     const liees = await db.devisAvecProposition(entite, recentes.map((p) => p.id));
     for (const fiche of liees) {
@@ -52,14 +57,15 @@ export async function releverDevisDolibarr(config: Config, log: Journal): Promis
       log(`${demande.reference} reliée au devis Dolibarr ${p.ref}`);
     }
 
-    // Devis signés (jamais de montant : l'écran Travaux est vu par les agents).
-    await db.remplacerDevisSignes(
-      entite,
-      recentes
-        .filter((p) => p.statut === 2)
-        .map((p) => ({ id: p.id, ref: p.ref, societe: s.id, tiers_id: p.socid || null, tiers_nom: idx.tiers.get(p.socid)?.nom ?? '', libelle: p.libelle, signe_le: p.signeLe?.toISOString() ?? null }))
-    );
+    // Devis signés (jamais de montant : l'écran Travaux est vu par les agents) : les modifiées
+    // signées entrent dans la liste, les autres en sortent (facturées, refusées…).
+    const signes = recentes
+      .filter((p) => p.statut === 2)
+      .map((p) => ({ id: p.id, ref: p.ref, societe: s.id, tiers_id: p.socid || null, tiers_nom: idx.tiers.get(p.socid)?.nom ?? '', libelle: p.libelle, signe_le: p.signeLe?.toISOString() ?? null }));
+    if (depuis) await db.majDevisSignes(entite, signes, recentes.filter((p) => p.statut !== 2).map((p) => p.id));
+    else await db.remplacerDevisSignes(entite, signes);
   }
+  await db.ecrireSynchro('dolibarr_devis', debut.toISOString());
 }
 
 /** Société de chaque entité Dolibarr (la première déclarée quand plusieurs partagent une entité). */
@@ -82,7 +88,7 @@ async function importerBon(config: Config, s: Societe, entite: number, b: BonLu,
     return;
   }
   const idx = await indexTiers();
-  const t = idx.tiers.get(b.socid) ?? null;
+  const t = b.socid ? await tiersParId(config, entite, b.socid) : null;
   const champsBon = { dolibarr_id: b.id, dolibarr_entite: entite, dolibarr_ref: b.ref, dolibarr_tiers_id: t?.id ?? null };
 
   // Même appel déjà écrit dans une bulle : on rattache le bon à cette fiche.
@@ -126,41 +132,51 @@ const DELAI_BON = 30 * 60_000;
 /** Relève les nouveaux bons de chaque société. Au tout premier passage, reprend sans les
  *  annoncer les bons ouverts des 14 derniers jours, puis ne suit que les nouveaux. */
 export async function releverBonsDolibarr(config: Config, log: Journal): Promise<void> {
+  // Clôtures : bons modifiés depuis le dernier contrôle (toutes les 30 min au plus).
+  const controle = await db.lireSynchro('dolibarr_bons_controle');
+  const controleDu = controle ? new Date(controle) : new Date(Date.now() - 86_400_000);
+  const aControler = Date.now() - controleDu.getTime() > 30 * 60_000;
+  const debut = new Date();
+
   for (const entite of new Set(Object.values(config.dolibarr.entites))) {
     const s = societeDeLEntite(config, entite);
     if (!s) continue;
     const curseur = `dolibarr_bons_${entite}`;
     const dernier = await db.lireSynchro(curseur);
-    const bons = await lireBonsRecents(config, entite);
-    const premier = dernier === null;
-    let fait = Number(dernier ?? 0);
-    if (premier) {
-      for (const b of bons.filter((x) => !termine(x) && Date.now() - x.creeLe.getTime() < 14 * 86_400_000)) {
+    // Le tout premier relevé (fait le 24/10) a posé les curseurs : ensuite, seulement les
+    // bons créés après le dernier n° vu.
+    if (dernier === null) {
+      const derniers = await lireBons(config, entite, `(t.datec:>=:'${new Date(Date.now() - 14 * 86_400_000).toISOString().slice(0, 10)}')`);
+      for (const b of derniers.filter((x) => !termine(x))) {
         await importerBon(config, s, entite, b, false, log).catch((e) => log(`⚠️ Bon Dolibarr ${b.ref} : ${e instanceof Error ? e.message : String(e)}`));
       }
-      fait = Math.max(0, ...bons.map((b) => b.id));
-    } else {
-      for (const b of bons.filter((x) => x.id > fait).sort((x, y) => x.id - y.id)) {
-        // Laisse au bureau le temps d'ajouter le n° du BI à son post Rainbow.
-        if (Date.now() - b.creeLe.getTime() < DELAI_BON) break;
-        try {
-          await importerBon(config, s, entite, b, true, log);
-        } catch (e) {
-          log(`⚠️ Bon Dolibarr ${b.ref} : ${e instanceof Error ? e.message : String(e)}`);
-        }
-        fait = b.id;
-      }
+      await db.ecrireSynchro(curseur, String(Math.max(0, ...derniers.map((b) => b.id))));
+      continue;
     }
-    if (fait > Number(dernier ?? 0)) await db.ecrireSynchro(curseur, String(fait));
+    let fait = Number(dernier);
+    for (const b of (await lireBons(config, entite, `(t.rowid:>:${fait})`)).sort((x, y) => x.id - y.id)) {
+      // Laisse au bureau le temps d'ajouter le n° du BI à son post Rainbow.
+      if (Date.now() - b.creeLe.getTime() < DELAI_BON) break;
+      try {
+        await importerBon(config, s, entite, b, true, log);
+      } catch (e) {
+        log(`⚠️ Bon Dolibarr ${b.ref} : ${e instanceof Error ? e.message : String(e)}`);
+      }
+      fait = b.id;
+    }
+    if (fait > Number(dernier)) await db.ecrireSynchro(curseur, String(fait));
 
     // Bons clôturés ou facturés dans Dolibarr : la fiche passe en réalisée.
-    for (const fiche of await db.interventionsAvecBon(entite, bons.filter(termine).map((b) => b.id))) {
+    if (!aControler) continue;
+    const modifies = await lireBons(config, entite, modifiesDepuis(controleDu));
+    for (const fiche of await db.interventionsAvecBon(entite, modifies.filter(termine).map((b) => b.id))) {
       if (fiche.statut !== 'realisee' && fiche.statut !== 'annulee') {
         await db.majIntervention(fiche.id, { statut: 'realisee' });
         log(`${fiche.reference} réalisée (bon ${fiche.dolibarr_ref} clôturé dans Dolibarr)`);
       }
     }
   }
+  if (aControler) await db.ecrireSynchro('dolibarr_bons_controle', debut.toISOString());
 }
 
 /** Société dont c'est la bulle (bulle principale, d'astreinte ou ITV) ; 'test' pour la bulle

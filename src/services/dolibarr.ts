@@ -90,13 +90,21 @@ export async function listerEntites(config: Config): Promise<{ id: number; nom: 
   }
 }
 
+/** Filtre « modifié depuis » (colonne tms de Dolibarr). Trois heures de marge : le fuseau de la
+ *  base Dolibarr n'est pas connu, et relire un objet deux fois est sans effet. */
+export function modifiesDepuis(d: Date): string {
+  const t = new Date(d.getTime() - 3 * 3_600_000).toISOString().slice(0, 19).replace('T', ' ');
+  return `(t.tms:>=:'${t}')`;
+}
+
 /** Lit toutes les pages d'une liste de l'API (Dolibarr répond 404 quand une page est vide). */
-async function toutLire<T>(config: Config, entite: number, chemin: string): Promise<T[]> {
+async function toutLire<T>(config: Config, entite: number, chemin: string, sqlfilters?: string): Promise<T[]> {
   const tout: T[] = [];
+  const filtre = sqlfilters ? `&sqlfilters=${encodeURIComponent(sqlfilters)}` : '';
   for (let page = 0; ; page++) {
     let lot: T[];
     try {
-      lot = (await appel<T[]>(config, entite, 'GET', `${chemin}${chemin.includes('?') ? '&' : '?'}limit=500&page=${page}&sortfield=t.rowid&sortorder=ASC`)) ?? [];
+      lot = (await appel<T[]>(config, entite, 'GET', `${chemin}${chemin.includes('?') ? '&' : '?'}limit=500&page=${page}&sortfield=t.rowid&sortorder=ASC${filtre}`)) ?? [];
     } catch (e) {
       if (e instanceof ErreurDolibarr && e.statut === 404) break;
       throw e;
@@ -119,63 +127,73 @@ export type ContactLu = ContactTiers & { brut: Record<string, unknown> };
 
 /** Liste complète des tiers et de leurs contacts, toutes sociétés confondues (dédoublonnée :
  *  les tiers partagés entre entités remontent dans chacune). */
-export async function lireTiersEtContacts(config: Config): Promise<{ tiers: TiersLu[]; contacts: ContactLu[] }> {
+function versTiers(t: Record<string, unknown>): TiersLu {
+  return {
+    id: Number(t.id),
+    nom: texte(t.name ?? t.nom),
+    alias: texte(t.name_alias),
+    code_client: texte(t.code_client),
+    code_fournisseur: texte(t.code_fournisseur),
+    siret: texte(t.idprof2).replace(/\s/g, ''),
+    tva_intra: texte(t.tva_intra).replace(/\s/g, '').toUpperCase(),
+    adresse: texte(t.address),
+    cp: texte(t.zip),
+    ville: texte(t.town),
+    telephone: [texte(t.phone), texte(t.phone_mobile)].filter(Boolean).join(' / '),
+    email: texte(t.email).toLowerCase(),
+    parent_id: Number(t.parent) > 0 ? Number(t.parent) : null,
+    client: Number(t.client) || 0,
+    fournisseur: Number(t.fournisseur) || 0,
+    actif: String(t.status ?? '1') === '1',
+    note_publique: texte(t.note_public),
+    note_privee: texte(t.note_private),
+    brut: compacter(t),
+  };
+}
+
+function versContact(c: Record<string, unknown>): ContactLu {
+  return {
+    id: Number(c.id),
+    tiers_id: Number(c.socid) > 0 ? Number(c.socid) : null,
+    nom: [texte(c.firstname), texte(c.lastname)].filter(Boolean).join(' '),
+    email: texte(c.email).toLowerCase(),
+    telephone: [texte(c.phone_pro), texte(c.phone_mobile), texte(c.phone_perso)].filter(Boolean).join(' / '),
+    poste: texte(c.poste),
+    brut: compacter(c),
+  };
+}
+
+/** Tiers et contacts de toutes les sociétés (dédoublonnés : les tiers partagés entre entités
+ *  remontent dans chacune). Avec `depuis`, seulement ceux modifiés depuis cette date : c'est le
+ *  relevé quotidien ; la relecture complète n'a lieu qu'une fois par mois. */
+export async function lireTiersEtContacts(config: Config, depuis?: Date): Promise<{ tiers: TiersLu[]; contacts: ContactLu[] }> {
+  const filtre = depuis ? modifiesDepuis(depuis) : undefined;
   const tiers = new Map<number, TiersLu>();
   const contacts = new Map<number, ContactLu>();
   for (const entite of new Set(Object.values(config.dolibarr.entites))) {
-    for (const t of await toutLire<Record<string, unknown>>(config, entite, '/thirdparties')) {
-      const id = Number(t.id);
-      if (tiers.has(id)) continue;
-      tiers.set(id, {
-        id,
-        nom: texte(t.name ?? t.nom),
-        alias: texte(t.name_alias),
-        code_client: texte(t.code_client),
-        code_fournisseur: texte(t.code_fournisseur),
-        siret: texte(t.idprof2).replace(/\s/g, ''),
-        tva_intra: texte(t.tva_intra).replace(/\s/g, '').toUpperCase(),
-        adresse: texte(t.address),
-        cp: texte(t.zip),
-        ville: texte(t.town),
-        telephone: [texte(t.phone), texte(t.phone_mobile)].filter(Boolean).join(' / '),
-        email: texte(t.email).toLowerCase(),
-        parent_id: Number(t.parent) > 0 ? Number(t.parent) : null,
-        client: Number(t.client) || 0,
-        fournisseur: Number(t.fournisseur) || 0,
-        actif: String(t.status ?? '1') === '1',
-        note_publique: texte(t.note_public),
-        note_privee: texte(t.note_private),
-        brut: compacter(t),
-      });
-    }
-    for (const c of await toutLire<Record<string, unknown>>(config, entite, '/contacts')) {
-      const id = Number(c.id);
-      if (contacts.has(id)) continue;
-      contacts.set(id, {
-        id,
-        tiers_id: Number(c.socid) > 0 ? Number(c.socid) : null,
-        nom: [texte(c.firstname), texte(c.lastname)].filter(Boolean).join(' '),
-        email: texte(c.email).toLowerCase(),
-        telephone: [texte(c.phone_pro), texte(c.phone_mobile), texte(c.phone_perso)].filter(Boolean).join(' / '),
-        poste: texte(c.poste),
-        brut: compacter(c),
-      });
-    }
+    for (const t of await toutLire<Record<string, unknown>>(config, entite, '/thirdparties', filtre)) if (!tiers.has(Number(t.id))) tiers.set(Number(t.id), versTiers(t));
+    for (const c of await toutLire<Record<string, unknown>>(config, entite, '/contacts', filtre)) if (!contacts.has(Number(c.id))) contacts.set(Number(c.id), versContact(c));
   }
   return { tiers: [...tiers.values()], contacts: [...contacts.values()] };
+}
+
+/** Un seul tiers (créé depuis le dernier relevé), ou null. */
+export async function lireUnTiers(config: Config, entite: number, id: number): Promise<TiersLu | null> {
+  try {
+    return versTiers(await appel<Record<string, unknown>>(config, entite, 'GET', `/thirdparties/${id}`));
+  } catch (e) {
+    if (e instanceof ErreurDolibarr && e.statut === 404) return null;
+    throw e;
+  }
 }
 
 export type BonLu = { id: number; ref: string; socid: number; description: string; statut: number; creeLe: Date; refClient: string };
 
 /** Derniers bons d'intervention d'une société, du plus récent au plus ancien. */
-export async function lireBonsRecents(config: Config, entite: number, nombre = 100): Promise<BonLu[]> {
-  let liste: Record<string, unknown>[];
-  try {
-    liste = (await appel<Record<string, unknown>[]>(config, entite, 'GET', `/interventions?limit=${nombre}&sortfield=t.rowid&sortorder=DESC`)) ?? [];
-  } catch (e) {
-    if (e instanceof ErreurDolibarr && e.statut === 404) return [];
-    throw e;
-  }
+/** Bons d'intervention d'une société répondant au filtre (nouveaux depuis un n°, ou modifiés
+ *  depuis une date) : jamais la liste entière. */
+export async function lireBons(config: Config, entite: number, sqlfilters: string): Promise<BonLu[]> {
+  const liste = await toutLire<Record<string, unknown>>(config, entite, '/interventions', sqlfilters);
   return liste.map((b) => ({
     id: Number(b.id),
     ref: texte(b.ref),
@@ -189,18 +207,19 @@ export async function lireBonsRecents(config: Config, entite: number, nombre = 1
 
 export type PropositionLue = { id: number; ref: string; socid: number; statut: number; creeLe: Date; signeLe: Date | null; libelle: string; refClient: string };
 
-/** Propositions commerciales (devis) d'une société : les brouillons, ou les plus récentes.
+/** Propositions commerciales (devis).
  *  Statuts Dolibarr : 0 brouillon, 1 validée (envoyée), 2 signée, 3 refusée, 4 facturée. */
-export async function lirePropositions(config: Config, entite: number, brouillons: boolean): Promise<PropositionLue[]> {
-  const chemin = brouillons
-    ? `/proposals?limit=500&sortfield=t.rowid&sortorder=ASC&sqlfilters=${encodeURIComponent('(t.fk_statut:=:0)')}`
-    : '/proposals?limit=200&sortfield=t.rowid&sortorder=DESC';
+/** Propositions modifiées depuis une date ; sans date (tout premier relevé), les 200 dernières. */
+export async function lirePropositions(config: Config, entite: number, depuis: Date | null): Promise<PropositionLue[]> {
   let liste: Record<string, unknown>[];
-  try {
-    liste = (await appel<Record<string, unknown>[]>(config, entite, 'GET', chemin)) ?? [];
-  } catch (e) {
-    if (e instanceof ErreurDolibarr && e.statut === 404) return [];
-    throw e;
+  if (depuis) liste = await toutLire<Record<string, unknown>>(config, entite, '/proposals', modifiesDepuis(depuis));
+  else {
+    try {
+      liste = (await appel<Record<string, unknown>[]>(config, entite, 'GET', '/proposals?limit=200&sortfield=t.rowid&sortorder=DESC')) ?? [];
+    } catch (e) {
+      if (e instanceof ErreurDolibarr && e.statut === 404) return [];
+      throw e;
+    }
   }
   return liste.map((p) => {
     const lignes = Array.isArray(p.lines) ? (p.lines as Record<string, unknown>[]) : [];

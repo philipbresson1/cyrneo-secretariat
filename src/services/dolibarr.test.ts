@@ -82,3 +82,10 @@ describe('sujet d’une conversation', () => {
     expect(sujetSansPrefixe('Réparation fosse')).toBe('réparation fosse');
   });
 });
+
+import { modifiesDepuis } from './dolibarr';
+describe('relevés incrémentaux', () => {
+  it('filtre « modifié depuis » avec trois heures de marge (fuseau de la base inconnu)', () => {
+    expect(modifiesDepuis(new Date('2026-10-24T10:00:00Z'))).toBe("(t.tms:>=:'2026-10-24 07:00:00')");
+  });
+});

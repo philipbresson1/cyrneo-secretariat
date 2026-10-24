@@ -275,6 +275,16 @@ export async function remplacerDevisSignes(
   verifier(await sb.from('dolibarr_devis_signes').delete().eq('entite', entite).lt('vu_le', vu), 'Nettoyage devis signés');
 }
 
+/** Relevé incrémental : ajoute ou met à jour les devis signés, retire ceux qui ne le sont plus. */
+export async function majDevisSignes(
+  entite: number,
+  signes: { id: number; ref: string; societe: string; tiers_id: number | null; tiers_nom: string; libelle: string; signe_le: string | null }[],
+  retires: number[]
+): Promise<void> {
+  if (signes.length) verifier(await sb.from('dolibarr_devis_signes').upsert(signes.map((d) => ({ ...d, entite, vu_le: new Date().toISOString() }))), 'Écriture devis signés');
+  if (retires.length) verifier(await sb.from('dolibarr_devis_signes').delete().eq('entite', entite).in('id', retires), 'Retrait devis signés');
+}
+
 export async function devisSignes(societes: string[]): Promise<{ ref: string; societe: string; tiers_nom: string; libelle: string; signe_le: string | null }[]> {
   return verifier(
     await sb.from('dolibarr_devis_signes').select('ref, societe, tiers_nom, libelle, signe_le').in('societe', societes).order('signe_le', { ascending: true }),

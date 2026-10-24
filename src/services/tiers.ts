@@ -7,7 +7,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { creerClientAdmin } from '../lib/supabase/admin';
 import type { Classification, Config, MailRecu } from '../logique/types';
 import { candidats, decrireTiers, evident, indexer, syndicExpediteur, type Candidat, type ContactTiers, type IndexTiers, type Tiers } from '../logique/tiers';
-import { lireTiersEtContacts } from './dolibarr';
+import { lireTiersEtContacts, lireUnTiers } from './dolibarr';
 
 let client: ReturnType<typeof creerClientAdmin> | null = null;
 const sb = () => (client ??= creerClientAdmin());
@@ -17,16 +17,21 @@ function verifier<T>(r: { data: T; error: { message: string } | null }, quoi: st
   return r.data;
 }
 
-const SEMAINE = 7 * 24 * 3_600_000;
+const JOUR = 24 * 3_600_000;
+const MOIS = 30 * JOUR;
 
-export async function derniereSynchro(): Promise<Date | null> {
-  const data = verifier(await sb().from('secretariat_synchro').select('fait_le').eq('nom', 'dolibarr_tiers').maybeSingle(), 'Lecture synchro');
+async function dateSynchro(nom: string): Promise<Date | null> {
+  const data = verifier(await sb().from('secretariat_synchro').select('fait_le').eq('nom', nom).maybeSingle(), 'Lecture synchro');
   return data ? new Date((data as { fait_le: string }).fait_le) : null;
 }
 
+/** Dernier relevé des tiers (complet ou des seules modifications). */
+export const derniereSynchro = () => dateSynchro('dolibarr_tiers');
+
+/** Un relevé par jour (seulement les tiers modifiés depuis la veille). */
 export async function synchroDue(maintenant = new Date()): Promise<boolean> {
   const d = await derniereSynchro();
-  return !d || maintenant.getTime() - d.getTime() >= SEMAINE;
+  return !d || maintenant.getTime() - d.getTime() >= JOUR;
 }
 
 async function parLots<T>(table: string, lignes: T[]): Promise<void> {
@@ -35,20 +40,43 @@ async function parLots<T>(table: string, lignes: T[]): Promise<void> {
   }
 }
 
-/** Relit toute la liste dans Dolibarr et met la copie à jour (ajouts, changements, suppressions). */
-export async function synchroniserTiers(config: Config): Promise<string> {
-  const debut = new Date().toISOString();
-  const { tiers, contacts } = await lireTiersEtContacts(config);
-  if (tiers.length === 0) throw new Error('Dolibarr ne renvoie aucun tiers : copie conservée telle quelle');
+/** Met la copie à jour. Chaque jour : seulement les tiers et contacts modifiés depuis le dernier
+ *  relevé. Une fois par mois, la nuit (ou sur demande) : relecture complète, qui retire aussi les
+ *  tiers supprimés de Dolibarr. */
+export async function synchroniserTiers(config: Config, complet = false, maintenant = new Date()): Promise<string> {
+  const precedent = await derniereSynchro();
+  const dernierComplet = (await dateSynchro('dolibarr_tiers_complet')) ?? precedent;
+  const heure = Number(new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', hour12: false }).format(maintenant));
+  const toutRelire = complet || !precedent || (!!dernierComplet && maintenant.getTime() - dernierComplet.getTime() >= MOIS && heure >= 1 && heure < 5);
+
+  const debut = maintenant.toISOString();
+  const { tiers, contacts } = await lireTiersEtContacts(config, toutRelire ? undefined : precedent!);
+  if (toutRelire && tiers.length === 0) throw new Error('Dolibarr ne renvoie aucun tiers : copie conservée telle quelle');
   await parLots('dolibarr_tiers', tiers.map((t) => ({ ...t, vu_le: debut })));
   await parLots('dolibarr_contacts', contacts.map((c) => ({ ...c, vu_le: debut })));
-  // Ce qui n'a pas été revu a disparu de Dolibarr.
-  verifier(await sb().from('dolibarr_tiers').delete().lt('vu_le', debut), 'Nettoyage tiers');
-  verifier(await sb().from('dolibarr_contacts').delete().lt('vu_le', debut), 'Nettoyage contacts');
-  const bilan = `${tiers.length} tiers, ${contacts.length} contacts`;
-  verifier(await sb().from('secretariat_synchro').upsert({ nom: 'dolibarr_tiers', fait_le: new Date().toISOString(), bilan }), 'Écriture synchro');
-  index = null;
+  if (toutRelire) {
+    // Ce qui n'a pas été revu a disparu de Dolibarr.
+    verifier(await sb().from('dolibarr_tiers').delete().lt('vu_le', debut), 'Nettoyage tiers');
+    verifier(await sb().from('dolibarr_contacts').delete().lt('vu_le', debut), 'Nettoyage contacts');
+  }
+  const bilan = toutRelire ? `relecture complète : ${tiers.length} tiers, ${contacts.length} contacts` : `${tiers.length} tiers et ${contacts.length} contacts modifiés`;
+  const lignes = [{ nom: 'dolibarr_tiers', fait_le: debut, bilan }];
+  if (toutRelire) lignes.push({ nom: 'dolibarr_tiers_complet', fait_le: debut, bilan });
+  verifier(await sb().from('secretariat_synchro').upsert(lignes), 'Écriture synchro');
+  if (tiers.length || contacts.length) index = null;
   return bilan;
+}
+
+/** Tiers par son id : dans la copie, sinon lu dans Dolibarr (créé depuis le dernier relevé) et
+ *  ajouté à la copie. */
+export async function tiersParId(config: Config, entite: number, id: number): Promise<Tiers | null> {
+  const connu = (await indexTiers()).tiers.get(id);
+  if (connu) return connu;
+  const lu = await lireUnTiers(config, entite, id).catch(() => null);
+  if (!lu) return null;
+  const { brut: _brut, ...t } = lu;
+  await ajouterTiersLocal(t);
+  return t;
 }
 
 /** Tiers que l'on vient de créer dans Dolibarr : ajouté à la copie sans attendre la synchro. */

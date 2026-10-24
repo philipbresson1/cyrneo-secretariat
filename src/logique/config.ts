@@ -18,6 +18,7 @@ const DEFAUTS = {
   test: { bulleRainbow: '', adresse: '' },
   serveur: { port: 3939, ecranPublic: true },
   modele: 'claude-opus-5-5',
+  modeleTri: 'claude-haiku-5-5',
   dolibarr: { actif: false, url: '', entites: {} },
   ecran: { colonnes: [] },
   heuresOuvrees: { debut: '08:00', fin: '18:00' },
@@ -97,6 +98,7 @@ export function appliquerEnv(brut: Record<string, unknown>, env: NodeJS.ProcessE
   const sortie = { ...brut };
   if (env.SECRETARIAT_MODE) sortie.mode = env.SECRETARIAT_MODE.trim().toLowerCase();
   if (env.SECRETARIAT_MODELE) sortie.modele = env.SECRETARIAT_MODELE.trim();
+  if (env.SECRETARIAT_MODELE_TRI) sortie.modeleTri = env.SECRETARIAT_MODELE_TRI.trim();
   const test = { ...((brut.test as Record<string, unknown>) ?? {}) };
   if (env.SECRETARIAT_ADRESSE_TEST) test.adresse = env.SECRETARIAT_ADRESSE_TEST.trim();
   if (env.SECRETARIAT_BULLE_TEST) test.bulleRainbow = env.SECRETARIAT_BULLE_TEST.trim();

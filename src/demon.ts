@@ -7,7 +7,7 @@
  *   npm start -- rapport [AAAA-MM-JJ]   génère l'Excel du jour (ou d'une date)
  *   npm start -- bulles        liste les bulles Rainbow visibles par le compte
  *   npm start -- dolibarr      vérifie l'accès Dolibarr, société par société
- *   npm start -- tiers         recopie maintenant la liste des tiers Dolibarr
+ *   npm start -- tiers [complet] relève les tiers Dolibarr modifiés (complet : toute la liste)
  *   npm start -- devis         relie les devis à faire aux propositions Dolibarr, devis acceptés
  *   npm start -- reprise-rainbow "SUD Travaux" 90   devis à faire tirés des anciens posts d'une bulle
  *   npm start -- essai-bon REF bon Dolibarr + message bulle de test pour une fiche existante
@@ -207,7 +207,8 @@ async function boucle(config: Config): Promise<void> {
         }
       }
     }
-    // Liste des tiers Dolibarr : recopiée chaque semaine (vérifié une fois par heure).
+    // Liste des tiers Dolibarr : modifications du jour chaque jour, relecture complète une fois
+    // par mois la nuit (vérifié une fois par heure).
     if (dolibarrPret() && Date.now() - derniereVerifTiers > 3_600_000) {
       derniereVerifTiers = Date.now();
       try {
@@ -416,7 +417,7 @@ async function principal() {
       console.log('Devis Dolibarr relevés.');
       return;
     case 'tiers':
-      console.log(`Synchronisation des tiers Dolibarr… ${await synchroniserTiers(config)}`);
+      console.log(`Synchronisation des tiers Dolibarr… ${await synchroniserTiers(config, process.argv.includes('complet'))}`);
       return;
     case 'essai-bon':
       return essaiBon(config, argument ?? 'INT-2026-0006');

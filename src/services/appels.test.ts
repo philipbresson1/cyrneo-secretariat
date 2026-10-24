@@ -15,16 +15,24 @@ const db = vi.hoisted(() => ({
   devisAvecProposition: vi.fn(async () => [] as unknown[]),
   devisOuvertsSansProposition: vi.fn(async () => [] as unknown[]),
   remplacerDevisSignes: vi.fn(),
+  majDevisSignes: vi.fn(),
   devisEnCoursDuTiers: vi.fn(async () => null),
 }));
-const bons = vi.hoisted(() => ({ liste: [] as unknown[], propositions: [] as { id: number; ref: string; socid: number; statut: number; creeLe: Date; signeLe: Date | null; libelle: string; refClient: string }[] }));
+const bons = vi.hoisted(() => ({ liste: [] as unknown[], modifies: [] as unknown[], synchro: {} as Record<string, string>, propositions: [] as { id: number; ref: string; socid: number; statut: number; creeLe: Date; signeLe: Date | null; libelle: string; refClient: string }[] }));
 const publier = vi.hoisted(() => vi.fn());
 vi.mock('./stockage', () => db);
 vi.mock('./rainbow', async () => ({ ...(await vi.importActual<object>('./rainbow')), publier }));
 vi.mock('./dolibarr', async () => ({
   ...(await vi.importActual<object>('./dolibarr')),
-  lireBonsRecents: vi.fn(async () => bons.liste),
-  lirePropositions: vi.fn(async (_c: unknown, _e: number, brouillons: boolean) => (brouillons ? bons.propositions.filter((p) => p.statut === 0) : bons.propositions)),
+  // Filtres côté Dolibarr : nouveaux depuis un n°, créés depuis une date, ou modifiés.
+  lireBons: vi.fn(async (_c: unknown, _e: number, filtre: string) => {
+    const liste = bons.liste as { id: number; creeLe: Date }[];
+    const n = /t\.rowid:>:(\d+)/.exec(filtre);
+    if (n) return liste.filter((b) => b.id > Number(n[1]));
+    if (filtre.includes('t.datec')) return liste.filter((b) => Date.now() - b.creeLe.getTime() < 14 * 86_400_000);
+    return bons.modifies;
+  }),
+  lirePropositions: vi.fn(async () => bons.propositions),
   bonParRef: vi.fn(async (_c: unknown, entite: number, ref: string) => (entite === 2 ? { id: 99, ref, socid: 5 } : null)),
 }));
 const classer = vi.hoisted(() => vi.fn());
@@ -37,6 +45,7 @@ vi.mock('./tiers', async () => ({
     return { tiers: i.tiers.get(5), syndic: null, possibles: [], index: i };
   }),
   indexTiers: vi.fn(async () => index.courant),
+  tiersParId: vi.fn(async (_c: unknown, _e: number, id: number) => (index.courant as ReturnType<typeof indexer>).tiers.get(id) ?? null),
 }));
 beforeEach(() => {
   index.courant = indexer([{ id: 5, nom: 'Résidence Les Pins', alias: '', code_client: 'CU5', code_fournisseur: '', siret: '', tva_intra: '', adresse: 'Route des Sanguinaires', cp: '20000', ville: 'Ajaccio', telephone: '04 95 00 00 00', email: '', parent_id: null, client: 1, fournisseur: 0, actif: true, note_publique: '', note_privee: '' }], []);
@@ -47,11 +56,15 @@ import { numeroBon, releverBonsDolibarr, releverDevisDolibarr, societeDeLaBulle,
 const config = validerConfig({ ...exemple, mode: 'reel', dolibarr: { ...exemple.dolibarr, entites: { 'sud-assainissement': 2 } } });
 const bon = (id: number, jours = 1, statut = 0) => ({ id, ref: `FI${id}`, socid: 5, description: 'Vidange fosse\nurgent', statut, creeLe: new Date(Date.now() - jours * 86_400_000), refClient: '' });
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  bons.synchro = {};
+  bons.modifies = [];
+  db.lireSynchro.mockImplementation(async (nom: string) => bons.synchro[nom] ?? null);
+});
 
 describe('aller-retour Dolibarr', () => {
   it('au premier passage, reprend les bons ouverts récents sans les annoncer', async () => {
-    db.lireSynchro.mockResolvedValueOnce(null);
     bons.liste = [bon(12), bon(11, 30), bon(10, 1, 3)];
     await releverBonsDolibarr(config, () => {});
     expect(db.creerInterventionTelephone).toHaveBeenCalledTimes(1);
@@ -61,7 +74,7 @@ describe('aller-retour Dolibarr', () => {
   });
 
   it('annonce un nouveau bon saisi dans Dolibarr dans la bulle de la société', async () => {
-    db.lireSynchro.mockResolvedValueOnce('12');
+    bons.synchro.dolibarr_bons_2 = '12';
     bons.liste = [bon(13), bon(12)];
     await releverBonsDolibarr(config, () => {});
     expect(db.creerInterventionTelephone).toHaveBeenCalledTimes(1);
@@ -69,7 +82,7 @@ describe('aller-retour Dolibarr', () => {
   });
 
   it("rattache le bon à la demande déjà notée dans une bulle plutôt que d'en créer une seconde", async () => {
-    db.lireSynchro.mockResolvedValueOnce('12');
+    bons.synchro.dolibarr_bons_2 = '12';
     db.interventionRecenteSemblable.mockResolvedValueOnce({ id: 7, reference: 'INT-2026-0090' } as never);
     bons.liste = [bon(13)];
     await releverBonsDolibarr(config, () => {});
@@ -107,7 +120,7 @@ describe('aller-retour Dolibarr', () => {
   });
 
   it("attend 30 minutes avant de relever un bon, le temps que son n° soit ajouté au post", async () => {
-    db.lireSynchro.mockResolvedValueOnce('12');
+    bons.synchro.dolibarr_bons_2 = '12';
     bons.liste = [bon(14, 0), bon(13)];
     await releverBonsDolibarr(config, () => {});
     expect(db.creerInterventionTelephone).toHaveBeenCalledTimes(1);
@@ -161,4 +174,28 @@ describe('aller-retour Dolibarr', () => {
     expect(db.majIntervention).toHaveBeenCalledWith(9, { statut: 'realisee' });
   });
 
+
+  it('clôtures : seuls les bons modifiés depuis le dernier contrôle sont relus', async () => {
+    bons.synchro.dolibarr_bons_2 = '20';
+    bons.synchro.dolibarr_bons_controle = new Date(Date.now() - 3_600_000).toISOString();
+    bons.liste = [];
+    bons.modifies = [bon(15, 3, 3)];
+    db.interventionsAvecBon.mockResolvedValueOnce([{ id: 4, reference: 'INT-2026-0004', statut: 'a_planifier', dolibarr_ref: 'FI15' }] as never);
+    await releverBonsDolibarr(config, () => {});
+    expect(db.interventionsAvecBon).toHaveBeenCalledWith(2, [15]);
+    expect(db.majIntervention).toHaveBeenCalledWith(4, { statut: 'realisee' });
+    expect(db.ecrireSynchro).toHaveBeenCalledWith('dolibarr_bons_controle', expect.any(String));
+  });
+
+  it('devis : relevé des seules propositions modifiées, la liste des signés est mise à jour sans tout remplacer', async () => {
+    bons.synchro.dolibarr_devis = new Date(Date.now() - 900_000).toISOString();
+    bons.propositions = [
+      { id: 50, ref: 'PR50', socid: 5, statut: 2, creeLe: new Date(), signeLe: null, libelle: 'Mur', refClient: '' },
+      { id: 51, ref: 'PR51', socid: 5, statut: 4, creeLe: new Date(), signeLe: null, libelle: 'Regard', refClient: '' },
+    ];
+    await releverDevisDolibarr(config, () => {});
+    expect(db.remplacerDevisSignes).not.toHaveBeenCalled();
+    expect(db.majDevisSignes).toHaveBeenCalledWith(2, [expect.objectContaining({ id: 50, ref: 'PR50' })], [51]);
+    expect(db.ecrireSynchro).toHaveBeenCalledWith('dolibarr_devis', expect.any(String));
+  });
 });
