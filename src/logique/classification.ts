@@ -29,7 +29,8 @@ export function consignesSysteme(societes: Societe[]): string {
     "- resume : une phrase courte et concrète, comme un collègue la noterait sur un post-it.",
     "- nature : ce qu'il faut faire, en quelques mots (ex. « vidange fosse 3 m³ », « débouchage évier »).",
     "- dateSouhaitee : la date ou la période voulue par le client, telle qu'il l'écrit. Vide sinon.",
-    "- creneau : si une date ET une heure précises sont données pour rappeler le client ou pour intervenir (« à rappeler demain 8h », « RDV lundi 14h »), au format AAAA-MM-JJTHH:MM en heure de Paris, calculées d'après la date de réception ; sinon vide.",
+    "- creneau : si un jour précis est fixé pour rappeler le client ou pour intervenir (« à rappeler demain 8h », « RDV lundi 14h », « mercredi 4 nov. matin »), au format AAAA-MM-JJTHH:MM en heure de Paris, calculé d'après la date de réception. Sans heure : 08:00 pour le matin ou la journée, 14:00 pour l'après-midi. Vide si rien n'est fixé (« la semaine prochaine », « dès que possible »).",
+    "- creneauPeriode : 'matin', 'apres-midi' ou 'journee' quand le créneau ne donne pas d'heure précise ; vide si l'heure est donnée ou sans créneau.",
     "- creneauType : 'rappel' si ce créneau sert à rappeler le client, 'intervention' si c'est le rendez-vous d'intervention, vide sans créneau.",
     "- inspectionCamera : true si la demande (intervention ou devis) porte sur une inspection caméra ou ITV de canalisations, sinon false.",
     "- contact : les coordonnées DU CLIENT (jamais celles d'une société du groupe). nom, telephone, email, adresse (lieu de l'intervention), commune. Laisse vide ce qui n'est pas écrit dans le mail : n'invente rien.",
@@ -72,6 +73,7 @@ export function schemaSortie(societes: Societe[]) {
       inspectionCamera: { type: 'boolean' },
       creneau: CHAINE,
       creneauType: { type: 'string', enum: ['', 'rappel', 'intervention'] },
+      creneauPeriode: { type: 'string', enum: ['', 'matin', 'apres-midi', 'journee'] },
       contact: {
         type: 'object',
         properties: { nom: CHAINE, telephone: CHAINE, email: CHAINE, adresse: CHAINE, commune: CHAINE },
@@ -79,7 +81,7 @@ export function schemaSortie(societes: Societe[]) {
         additionalProperties: false,
       },
     },
-    required: ['categorie', 'societe', 'urgence', 'resume', 'nature', 'dateSouhaitee', 'inspectionCamera', 'creneau', 'creneauType', 'contact'],
+    required: ['categorie', 'societe', 'urgence', 'resume', 'nature', 'dateSouhaitee', 'inspectionCamera', 'creneau', 'creneauType', 'creneauPeriode', 'contact'],
     additionalProperties: false,
   };
 }
@@ -116,6 +118,7 @@ export function lireClassification(json: string, mail: MailRecu, societes: Socie
     inspectionCamera: brut.inspectionCamera === true,
     creneau: /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(texte(brut.creneau)) ? texte(brut.creneau) : '',
     creneauType: brut.creneauType === 'rappel' || brut.creneauType === 'intervention' ? brut.creneauType : '',
+    creneauPeriode: brut.creneauPeriode === 'matin' || brut.creneauPeriode === 'apres-midi' || brut.creneauPeriode === 'journee' ? brut.creneauPeriode : '',
     contact: {
       nom: texte(c.nom) || mail.deNom,
       // Le numéro doit exister dans le mail : on ne promet pas de rappeler un numéro inventé.

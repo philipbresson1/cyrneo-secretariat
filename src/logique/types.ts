@@ -162,6 +162,7 @@ export type Classification = {
   inspectionCamera: boolean; // la demande porte sur une inspection caméra (ITV) de canalisations
   creneau?: string; // date et heure précises données (AAAA-MM-JJTHH:MM, heure de Paris), sinon ''
   creneauType?: 'rappel' | 'intervention' | ''; // ce créneau : rappeler le client, ou intervenir
+  creneauPeriode?: 'matin' | 'apres-midi' | 'journee' | ''; // créneau sans heure précise
   contact: Contact;
 };
 

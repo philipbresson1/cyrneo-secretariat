@@ -12,10 +12,11 @@
 import type { Classification, Config, Intervention, MailRecu, Societe } from '../logique/types';
 import { choisirBulle } from '../logique/decision';
 import { classer } from './classifieur';
-import { dateDuBon, jourFr } from '../logique/date-bon';
+import { dateDuBon, depuisParis, jourFr } from '../logique/date-bon';
+import { rdvDuClient } from './planning';
 import { bonParRef, creerBonIntervention, creerClient, entiteDe, lireBons, lirePropositions, modifiesDepuis, propositionParRef, type BonLu } from './dolibarr';
 import { agendaGoogleConfigure, inscrire } from './google-agenda';
-import { decalageParis } from '../lib/agenda';
+import { decalageParis, rdvDesJours } from '../lib/agenda';
 import { historiqueBulle, memeBulle, publier, type MessageBulle } from './rainbow';
 import * as db from './stockage';
 import { ajouterTiersLocal, blocRainbow, indexTiers, reconnaitreTiers, tiersParId, type TiersReconnu } from './tiers';
@@ -394,6 +395,22 @@ export async function traiterMessageBulle(config: Config, m: MessageBulle, log: 
   return true;
 }
 
+const fmtJour = (creneau: string) =>
+  new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', weekday: 'long', day: 'numeric', month: 'long' }).format(depuisParis(creneau));
+
+/** Le client a-t-il déjà un rendez-vous ce jour-là dans cet agenda (posé à la main par l'équipe) ? */
+async function dejaAuPlanning(icsEnv: string, fiche: Intervention, jour: Date): Promise<boolean> {
+  const url = process.env[icsEnv];
+  if (!url) return false;
+  try {
+    const r = await fetch(url);
+    if (!r.ok) return false;
+    return rdvDesJours(await r.text(), jour, 1).some((j) => j.rdvs.some((rdv) => rdvDuClient(fiche, rdv)));
+  } catch {
+    return false;
+  }
+}
+
 const fmtCreneau = (creneau: string) =>
   new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }).format(
     new Date(`${creneau}:00${decalageParis(new Date(`${creneau}:00Z`))}`)
@@ -462,14 +479,23 @@ export async function enregistrerDansLesOutils(
     const agenda = config.agendas.find((a) => a.icsEnv === s.agendaRdv);
     const calendrier = reel ? agenda?.calendrier : config.test.calendrier;
     const quoi = c.creneauType === 'rappel' ? 'Rappel' : 'RDV';
-    const quand = fmtCreneau(c.creneau);
+    const periode = c.creneauPeriode ? { matin: 'matin', 'apres-midi': 'après-midi', journee: 'journée' }[c.creneauPeriode] : '';
+    const quand = periode ? `${fmtJour(c.creneau)} (${periode})` : fmtCreneau(c.creneau);
+    const debut = depuisParis(c.creneau);
+    // Jour d'intervention fixé avec le client : la demande est planifiée, agenda écrit ou non.
+    if (c.creneauType !== 'rappel') {
+      fiche = await db.majIntervention(fiche.id, { statut: 'planifiee', date_prevue: debut.toISOString() });
+      lignes.push(`🗓️ Planifiée le ${quand}`);
+    }
+    const deja = agenda ? await dejaAuPlanning(agenda.icsEnv, fiche, debut) : false;
     if (!agenda) lignes.push(`⚠️ Pas d'agenda de planning pour ${s.nom} : ${quoi.toLowerCase()} du ${quand} à inscrire à la main`);
+    else if (deja) lignes.push(`📅 Déjà au planning ${agenda.nom} ce jour-là`);
     else if (!calendrier || !agendaGoogleConfigure()) lignes.push(`${reel ? '⚠️' : '🧪'} ${quoi} ${reel ? 'à inscrire à la main' : 'qui serait inscrit'} au planning ${agenda.nom} : ${quand}`);
     else {
       try {
         const nom = fiche.client_nom || c.contact.nom || 'Client';
         await inscrire(calendrier, {
-          titre: c.creneauType === 'rappel' ? `📞 À rappeler — ${nom} — ${fiche.nature}` : `${fiche.nature} — ${nom}`,
+          titre: c.creneauType === 'rappel' ? `📞 À rappeler — ${nom} — ${fiche.nature}` : `${fiche.nature} — ${nom}${periode ? ` (${periode})` : ''}`,
           description: [
             fiche.client_telephone ? `Tél. ${fiche.client_telephone}` : '',
             [fiche.adresse, fiche.commune].filter(Boolean).join(', '),
@@ -480,9 +506,9 @@ export async function enregistrerDansLesOutils(
             .join('\n'),
           lieu: [fiche.adresse, fiche.commune].filter(Boolean).join(', '),
           debut: c.creneau,
-          minutes: c.creneauType === 'rappel' ? 15 : 60,
+          minutes: c.creneauType === 'rappel' ? 15 : c.creneauPeriode === 'journee' ? 540 : c.creneauPeriode ? 240 : 60,
         });
-        await db.majIntervention(fiche.id, { statut: 'planifiee', date_prevue: new Date(`${c.creneau}:00${decalageParis(new Date(`${c.creneau}:00Z`))}`).toISOString() });
+        if (c.creneauType === 'rappel') await db.majIntervention(fiche.id, { statut: 'planifiee', date_prevue: debut.toISOString() });
         lignes.push(`📅 ${quoi} inscrit au planning ${agenda.nom}${reel ? '' : ' (agenda de test)'} : ${quand}`);
         log(`${fiche.reference} : ${quoi.toLowerCase()} inscrit au planning ${agenda.nom} (${c.creneau})`);
       } catch (e) {

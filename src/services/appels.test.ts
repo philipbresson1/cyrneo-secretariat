@@ -243,6 +243,20 @@ describe('aller-retour Dolibarr', () => {
     expect(db.majIntervention).toHaveBeenCalledWith(42, expect.objectContaining({ statut: 'planifiee', date_prevue: '2026-10-25T07:00:00.000Z' }));
   });
 
+  it('jour fixé sans heure (« mercredi 4 nov. matin ») : planifiée tout de suite, même sans agenda Google', async () => {
+    db.majIntervention.mockClear();
+    db.majIntervention.mockImplementation(async (_id: number, champs: object) => ({ id: 176, reference: 'INT-2026-0176', ...champs }) as never);
+    const c = {
+      categorie: 'demande_intervention' as const, societe: 'sud-assainissement', urgence: 'normale' as const, resume: 'Fosse et ITV à Petit Capo', nature: 'vidange fosse et ITV', dateSouhaitee: 'mercredi 4 nov. matin',
+      inspectionCamera: true, creneau: '2026-11-04T08:00', creneauType: 'intervention' as const, creneauPeriode: 'matin' as const,
+      contact: { nom: 'M. Lenzini', telephone: '06 20 02 26 62', email: '', adresse: 'Petit Capo', commune: '' },
+    };
+    const fiche = { id: 176, reference: 'INT-2026-0176', client_nom: 'M. Lenzini', client_telephone: '06 20 02 26 62', adresse: 'Petit Capo', commune: '', nature: 'vidange fosse et ITV', dolibarr_ref: null } as never;
+    const lignes = await enregistrerDansLesOutils({ ...config, mode: 'test' }, config.societes.find((x) => x.id === 'sud-assainissement')!, fiche, c, null, true, '', () => {});
+    expect(db.majIntervention).toHaveBeenCalledWith(176, { statut: 'planifiee', date_prevue: '2026-11-04T07:00:00.000Z' });
+    expect(lignes[0]).toBe('🗓️ Planifiée le mercredi 4 novembre (matin)');
+  });
+
   it('en mode test : rien n’est écrit, la réponse dit ce qui serait fait', async () => {
     const c = { categorie: 'demande_intervention' as const, societe: 'sud-assainissement', urgence: 'normale' as const, resume: '', nature: 'débouchage', dateSouhaitee: '', inspectionCamera: false, creneau: '2026-10-25T08:00', creneauType: 'rappel' as const, contact: { nom: 'Mme Rossi', telephone: '', email: '', adresse: '', commune: '' } };
     const lignes = await enregistrerDansLesOutils({ ...config, mode: 'test' }, config.societes.find((x) => x.id === 'sud-assainissement')!, { id: 1, reference: 'INT-1' } as never, c, null, false, '', () => {});
