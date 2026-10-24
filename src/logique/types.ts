@@ -103,7 +103,13 @@ export type Config = {
   serveur: { port: number; ecranPublic: boolean };
   modele: string; // lecture des PDF (factures, pièces jointes), rappels, rapprochements
   modeleTri: string; // tri des mails et posts Rainbow sans PDF : gros volume, tâche simple
-  dolibarr: { actif: boolean; url: string; entites: Record<string, number> };
+  dolibarr: {
+    actif: boolean;
+    url: string;
+    entites: Record<string, number>;
+    champDateBon?: string; // champ complémentaire « date d'intervention » du BI, s'il existe (sinon ligne datée)
+    bonsVeille?: string[]; // sociétés dont les BI du lendemain sont préparés d'après le planning
+  };
   /** Colonnes de planning de l'écran d'accueil ; chacune regroupe un ou plusieurs agendas (icsEnv). */
   ecran: {
     colonnes: { titre: string; agendas: string[] }[];

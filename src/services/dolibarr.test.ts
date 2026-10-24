@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import exemple from '../../config.exemple.json';
 import { validerConfig } from '../logique/config';
 import type { Classification } from '../logique/types';
-import { creerBonIntervention, descriptionBon, entiteDe, lireTiersEtContacts } from './dolibarr';
+import { creerBonIntervention, daterBon, descriptionBon, entiteDe, lireTiersEtContacts } from './dolibarr';
 
 const config = validerConfig({ ...exemple, dolibarr: { actif: true, url: 'https://doli.exemple.fr/', entites: { 'sud-assainissement': 2 } } });
 const c: Classification = {
@@ -47,6 +47,30 @@ describe('connecteur Dolibarr', () => {
     const corps = JSON.parse(String(appels[0].init.body));
     expect(corps).toMatchObject({ socid: 42, fk_project: 0, ref_client: 'INT-2026-0042' });
     expect(corps.description).toContain('URGENT');
+  });
+
+  it('crée le bon daté : ligne datée pour le panier des agents', async () => {
+    const date = new Date('2026-10-24T06:00:00Z');
+    const appels = simuler([
+      { statut: 200, corps: 16 },
+      { statut: 200, corps: { id: '16', ref: 'I-SA-260700' } },
+      { statut: 200, corps: { id: '16', statut: '0', lines: [] } },
+      { statut: 200, corps: 1 },
+    ]);
+    await creerBonIntervention(config, 2, 42, c, 'INT-2026-0043', date);
+    expect(JSON.parse(String(appels[0].init.body)).dateo).toBe(date.getTime() / 1000);
+    expect(appels[3].url).toContain('/interventions/16/lines');
+    expect(JSON.parse(String(appels[3].init.body))).toMatchObject({ date: date.getTime() / 1000, duree: 0 });
+  });
+
+  it('ne date pas deux fois, et ne touche pas une autre date', async () => {
+    const date = new Date('2026-10-24T06:00:00Z');
+    simuler([{ statut: 200, corps: { statut: '0', lines: [{ date: String(date.getTime() / 1000 + 3600) }] } }]);
+    expect(await daterBon(config, 2, 16, date, 'x')).toBe('deja');
+    simuler([{ statut: 200, corps: { statut: '0', lines: [{ date: '1793264400' }] } }]);
+    expect(await daterBon(config, 2, 16, date, 'x')).toBe('autre');
+    simuler([{ statut: 200, corps: { statut: '1', lines: [] } }]);
+    expect(await daterBon(config, 2, 16, date, 'x')).toBe('impossible');
   });
 
   it('remonte le message d’erreur de Dolibarr', async () => {

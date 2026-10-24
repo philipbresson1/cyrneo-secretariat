@@ -32,8 +32,9 @@ import { genererRapport } from './services/rapport-excel';
 import { envoyer } from './services/smtp';
 import { arreter as arreterRainbow, bullesAttendues, ecouterBulles, listerBulles, publier, type MessageBulle } from './services/rainbow';
 import { rapprocherPlannings } from './services/planning';
+import { preparerBonsDuLendemain } from './services/veille';
 import { releverBonsDolibarr, releverDevisDolibarr, repriseBulle, traiterMessageBulle } from './services/appels';
-import { creerBonIntervention, entiteDe, listerEntites, verifierDroits } from './services/dolibarr';
+import { bonParRef, creerBonIntervention, entiteDe, lireBonBrut, listerEntites, verifierDroits } from './services/dolibarr';
 import { blocRainbow, reconnaitreTiers, synchroDue, synchroniserTiers } from './services/tiers';
 import { envoyerRappels, type BilanRappels } from './services/rappels';
 import { demarrerServeur, type Etat } from './services/serveur';
@@ -164,6 +165,7 @@ async function boucle(config: Config): Promise<void> {
   let derniereVerifTiers = 0;
   let derniereReleveDevis = 0;
   let dernierRapprochement = 0;
+  let derniereVeille = '';
 
   // Demandes notées dans les bulles : traitées une par une, dans l'ordre d'arrivée.
   // Signe de vie chaque minute : la base alerte (téléphone + mail) s'il manque depuis 15 min.
@@ -258,6 +260,21 @@ async function boucle(config: Config): Promise<void> {
         afficherRappels(await envoyerRappels(config));
       } catch (e) {
         log(`⚠️ Rappels de rendez-vous : ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+
+    // BI du planning : la veille à 16h30 pour le lendemain (jusqu'au prochain jour ouvré), puis à
+    // 7h pour le jour même (rendez-vous ajoutés dans la soirée). Sans date, pas de panier.
+    if (dolibarrPret()) {
+      const passe = heure >= '16:30' ? `${jour}:soir` : heure >= '07:00' ? `${jour}:matin` : '';
+      if (passe && derniereVeille !== passe && (await lireSynchro(`veille:${passe}`).catch(() => null)) === null) {
+        derniereVeille = passe;
+        try {
+          const bilan = await preparerBonsDuLendemain(config, log, passe.endsWith(':soir') ? undefined : [jour]);
+          await ecrireSynchro(`veille:${passe}`, bilan.length ? `${bilan.length} société(s)` : 'rien');
+        } catch (e) {
+          log(`⚠️ BI du planning : ${e instanceof Error ? e.message : String(e)}`);
+        }
       }
     }
 
@@ -427,6 +444,30 @@ async function principal() {
     case 'tiers':
       console.log(`Synchronisation des tiers Dolibarr… ${await synchroniserTiers(config, process.argv.includes('complet'))}`);
       return;
+    case 'bons-veille': {
+      // npm start -- bons-veille [AAAA-MM-JJ] : BI du planning (simulation hors mode réel)
+      const bilan = await preparerBonsDuLendemain(config, (t) => console.log(t), argument ? [argument] : undefined);
+      console.log(bilan.join('\n\n') || 'Rien à préparer : tous les rendez-vous ont leur BI daté.');
+      await arreterRainbow();
+      process.exit(0);
+    }
+    case 'dates-bon': {
+      // npm start -- dates-bon I-SA-260430 : où ce bon porte sa date (pour régler dolibarr.champDateBon)
+      if (!argument) throw new Error('Usage : npm start -- dates-bon I-SA-260430');
+      for (const entite of new Set(Object.values(config.dolibarr.entites))) {
+        const bon = await bonParRef(config, entite, argument);
+        if (!bon) continue;
+        const b = await lireBonBrut(config, entite, bon.id);
+        const date = (v: unknown) => (Number(v) > 0 ? new Date(Number(v) * 1000).toLocaleString('fr-FR', { timeZone: 'Europe/Paris' }) : '—');
+        console.log(`${bon.ref} (entité ${entite}, statut ${bon.statut})`);
+        console.log(`  début prévu (dateo) : ${date(b.dateo)} · fin prévue (datee) : ${date(b.datee)}`);
+        for (const l of (b.lines as Record<string, unknown>[] | undefined) ?? []) console.log(`  ligne : ${date(l.date ?? l.datei)} · ${String(l.desc ?? l.description ?? '').slice(0, 60)}`);
+        for (const [k, v] of Object.entries((b.array_options ?? {}) as Record<string, unknown>)) console.log(`  champ ${k} : ${v === null || v === '' ? '—' : /date/i.test(k) ? date(v) : String(v)}`);
+        return;
+      }
+      console.log(`Bon ${argument} introuvable`);
+      return;
+    }
     case 'essai-bon':
       return essaiBon(config, argument ?? 'INT-2026-0006');
     case 'dolibarr': {
@@ -456,7 +497,7 @@ async function principal() {
       return;
     }
     default:
-      throw new Error(`Commande inconnue « ${commande} » (demarrer, une-fois, essai, essai-bon, tiers, devis, reprise-rainbow, rapport, bulles, dolibarr, verifier, rappels)`);
+      throw new Error(`Commande inconnue « ${commande} » (demarrer, une-fois, essai, essai-bon, bons-veille, dates-bon, tiers, devis, reprise-rainbow, rapport, bulles, dolibarr, verifier, rappels)`);
   }
 }
 

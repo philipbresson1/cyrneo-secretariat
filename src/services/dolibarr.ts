@@ -9,6 +9,7 @@
  * Aucun tiers n'est jamais créé ici : le bon n'est fait que sur un tiers existant, reconnu
  * dans la liste synchronisée (voir services/tiers.ts).
  */
+import { datesDuBon, memeJour } from '../logique/date-bon';
 import type { Classification, Config } from '../logique/types';
 import type { ContactTiers, Tiers } from '../logique/tiers';
 import { prixUnitaireSaisi, type FactureLue, type FournisseurLu } from '../logique/facture';
@@ -36,7 +37,7 @@ export function entiteDe(config: Config, societe: string): number {
   return entite;
 }
 
-async function appel<T>(config: Config, entite: number, methode: 'GET' | 'POST', chemin: string, corps?: unknown): Promise<T> {
+async function appel<T>(config: Config, entite: number, methode: 'GET' | 'POST' | 'PUT', chemin: string, corps?: unknown): Promise<T> {
   const cle = process.env.DOLIBARR_API_KEY;
   if (!cle) throw new Error('Clé DOLIBARR_API_KEY manquante (attendue dans .env.local)');
   const reponse = await fetch(`${base(config)}${chemin}`, {
@@ -301,16 +302,49 @@ export function descriptionBon(c: Classification, reference: string): string {
 }
 
 /** Crée le bon d'intervention en brouillon et renvoie sa référence Dolibarr. */
-export async function creerBonIntervention(config: Config, entite: number, socid: number, c: Classification, reference: string): Promise<BonDolibarr> {
+export async function creerBonIntervention(
+  config: Config,
+  entite: number,
+  socid: number,
+  c: Classification,
+  reference: string,
+  date: Date | null = null
+): Promise<BonDolibarr> {
   const id = await appel<number>(config, entite, 'POST', '/interventions', {
     socid,
     fk_project: 0, // champ obligatoire de l'API ; 0 = aucun projet
     description: descriptionBon(c, reference),
     ref_client: reference,
-    note_private: `Créé par le secrétariat CYRNEO depuis un mail (${reference}).`,
+    note_private: `Créé par le secrétariat CYRNEO (${reference}).`,
+    ...(date ? { dateo: Math.floor(date.getTime() / 1000), datee: Math.floor(date.getTime() / 1000) + 3600 } : {}),
   });
   const bon = await appel<{ id: number | string; ref?: string }>(config, entite, 'GET', `/interventions/${id}`);
-  return { id: Number(id), ref: bon.ref ?? `#${id}` };
+  const cree = { id: Number(id), ref: bon.ref ?? `#${id}` };
+  if (date) await daterBon(config, entite, cree.id, date, c.nature || 'Intervention');
+  return cree;
+}
+
+export async function lireBonBrut(config: Config, entite: number, id: number): Promise<Record<string, unknown>> {
+  return appel<Record<string, unknown>>(config, entite, 'GET', `/interventions/${id}`);
+}
+
+/** Met la date d'intervention sur un bon, pour qu'il entre dans le panier des agents : champ
+ *  complémentaire (dolibarr.champDateBon) s'il est réglé, sinon une ligne datée (bon en brouillon
+ *  seulement). « deja » : le bon porte déjà cette date ; « autre » : il en porte une autre. */
+export async function daterBon(config: Config, entite: number, id: number, date: Date, libelle: string, remplacer = false): Promise<'datee' | 'deja' | 'autre' | 'impossible'> {
+  const b = await lireBonBrut(config, entite, id);
+  const champ = config.dolibarr.champDateBon?.replace(/^options_/, '');
+  const dates = datesDuBon(b, champ);
+  if (dates.some((d) => memeJour(d, date))) return 'deja';
+  if (dates.length > 0 && !remplacer) return 'autre';
+  const ts = Math.floor(date.getTime() / 1000);
+  if (champ) {
+    await appel(config, entite, 'PUT', `/interventions/${id}`, { array_options: { [`options_${champ}`]: ts }, dateo: ts, datee: ts + 3600 });
+    return 'datee';
+  }
+  if (Number(b.statut ?? b.fk_statut ?? b.status) !== 0) return 'impossible'; // lignes : brouillon seulement
+  await appel(config, entite, 'POST', `/interventions/${id}/lines`, { description: `Prévu : ${libelle}`, date: ts, duree: 0 });
+  return 'datee';
 }
 
 /** Crée un client : la personne, l'entreprise ou la résidence où l'on intervient, jamais le

@@ -235,7 +235,7 @@ describe('aller-retour Dolibarr', () => {
     const lignes = await enregistrerDansLesOutils(reel, reel.societes.find((x) => x.id === 'sud-assainissement')!, fiche, c, { tiers: null, syndic: null, possibles: [], index: index.courant } as never, false, 'Philip', () => {});
     expect(lignes).toEqual([
       '👤 Nouveau client créé dans Dolibarr : Mme Rossi',
-      '🧾 BI I-SA-260700 créé (brouillon)',
+      '🧾 BI I-SA-260700 créé (brouillon), intervention le dimanche 25 octobre',
       expect.stringMatching(/^📅 Rappel inscrit au planning Débouchage : dimanche 25 octobre (à )?08:00$/),
     ]);
     expect(inscrire).toHaveBeenCalledWith('debouchagesudassai@gmail.com', expect.objectContaining({ titre: '📞 À rappeler — Mme Rossi — débouchage WC', debut: '2026-10-25T08:00', minutes: 15 }));

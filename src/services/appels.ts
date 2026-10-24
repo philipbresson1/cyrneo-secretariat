@@ -12,6 +12,7 @@
 import type { Classification, Config, Intervention, MailRecu, Societe } from '../logique/types';
 import { choisirBulle } from '../logique/decision';
 import { classer } from './classifieur';
+import { dateDuBon, jourFr } from '../logique/date-bon';
 import { bonParRef, creerBonIntervention, creerClient, entiteDe, lireBons, lirePropositions, modifiesDepuis, propositionParRef, type BonLu } from './dolibarr';
 import { agendaGoogleConfigure, inscrire } from './google-agenda';
 import { decalageParis } from '../lib/agenda';
@@ -439,14 +440,21 @@ export async function enregistrerDansLesOutils(
     if (tiersId) {
       if (dolibarr) {
         try {
-          const bon = await creerBonIntervention(config, entite, tiersId, c, fiche.reference);
+          const date = dateDuBon(c, new Date(fiche.cree_le));
+          const bon = await creerBonIntervention(config, entite, tiersId, c, fiche.reference, date);
           bonRef = bon.ref;
-          fiche = await db.majIntervention(fiche.id, { dolibarr_id: bon.id, dolibarr_entite: entite, dolibarr_ref: bon.ref, dolibarr_tiers_id: tiersId, statut: 'planifiee' });
-          lignes.push(`🧾 BI ${bon.ref} créé (brouillon)`);
+          fiche = await db.majIntervention(fiche.id, {
+            dolibarr_id: bon.id, dolibarr_entite: entite, dolibarr_ref: bon.ref, dolibarr_tiers_id: tiersId, statut: 'planifiee',
+            ...(date && !fiche.date_prevue ? { date_prevue: date.toISOString() } : {}),
+          });
+          lignes.push(`🧾 BI ${bon.ref} créé (brouillon)${date ? `, intervention le ${jourFr(date)}` : ', date à fixer : posée la veille d’après le planning'}`);
         } catch (e) {
           lignes.push(`⚠️ BI non créé (${e instanceof Error ? e.message : String(e)}) : à faire à la main`);
         }
-      } else lignes.push('🧪 BI qui serait créé en brouillon');
+      } else {
+        const date = dateDuBon(c, new Date(fiche.cree_le));
+        lignes.push(`🧪 BI qui serait créé en brouillon${date ? `, intervention le ${jourFr(date)}` : ', date posée la veille d’après le planning'}`);
+      }
     }
   }
 

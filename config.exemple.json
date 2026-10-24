@@ -145,6 +145,7 @@
   "dolibarr": {
     "actif": false,
     "url": "https://cyrneo.on2.netlogic.fr",
+    "bonsVeille": ["sud-assainissement", "multiservices-2a"],
     "entites": {
       "cyrneo": 1,
       "sud-assainissement": 2,

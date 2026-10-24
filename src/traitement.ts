@@ -22,6 +22,7 @@ import { envoyer } from './services/smtp';
 import { publier } from './services/rainbow';
 import { classerPiecesJointes } from './services/fichiers';
 import { creerBonIntervention, entiteDe } from './services/dolibarr';
+import { dateDuBon, jourFr } from './logique/date-bon';
 import { blocRainbow, reconnaitreTiers, type TiersReconnu } from './services/tiers';
 import { saisirFactures } from './services/factures';
 import * as db from './services/stockage';
@@ -238,9 +239,15 @@ export async function traiterMail(mail: MailRecu, boite: Boite, config: Config):
             throw new Error('tiers non reconnu avec certitude, bon à faire à la main');
           }
           const entite = entiteDe(config, inter.societe);
-          const bon = await creerBonIntervention(config, entite, r.tiers.id, classification, inter.reference);
-          intervention = await db.majIntervention(inter.id, { dolibarr_ref: bon.ref, dolibarr_id: bon.id, dolibarr_entite: entite });
-          return `${bon.ref} (brouillon) pour ${r.tiers.nom}`;
+          const date = dateDuBon(classification, mail.recuLe);
+          const bon = await creerBonIntervention(config, entite, r.tiers.id, classification, inter.reference, date);
+          intervention = await db.majIntervention(inter.id, {
+            dolibarr_ref: bon.ref,
+            dolibarr_id: bon.id,
+            dolibarr_entite: entite,
+            ...(date && !inter.date_prevue ? { date_prevue: date.toISOString() } : {}),
+          });
+          return `${bon.ref} (brouillon) pour ${r.tiers.nom}${date ? `, intervention le ${jourFr(date)}` : ', date à fixer (posée la veille d’après le planning)'}`;
         });
         if (config.mode === 'reel' && !intervention?.dolibarr_ref) bonAFaire ??= 'Dolibarr a refusé la création (voir le journal)';
         break;

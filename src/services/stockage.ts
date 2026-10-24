@@ -352,6 +352,35 @@ export async function devisEnCoursSemblable(societe: string, tiersId: number | n
   );
 }
 
+/** Demandes d'intervention encore ouvertes d'une société (pas réalisées, pas annulées). */
+export async function fichesOuvertes(societe: string): Promise<Intervention[]> {
+  return verifier(
+    await sb
+      .from('interventions')
+      .select('*')
+      .neq('type', 'devis')
+      .eq('societe', societe)
+      .in('statut', ['coordonnees_demandees', 'a_planifier', 'planifiee'])
+      .gte('cree_le', new Date(Date.now() - 60 * 86_400_000).toISOString()),
+    'Lecture fiches ouvertes'
+  ) as Intervention[];
+}
+
+/** BI en brouillon d'un tiers (copie des bons Dolibarr), les plus récents d'abord. */
+export async function brouillonsDuTiers(entite: number, socid: number): Promise<{ id: number; ref: string }[]> {
+  return verifier(
+    await sb
+      .from('dolibarr_bons')
+      .select('id, ref')
+      .eq('entite', entite)
+      .eq('socid', socid)
+      .eq('statut', 0)
+      .gte('cree_le', new Date(Date.now() - 60 * 86_400_000).toISOString())
+      .order('id', { ascending: false }),
+    'Lecture brouillons du tiers'
+  ) as { id: number; ref: string }[];
+}
+
 export async function lireSynchro(nom: string): Promise<string | null> {
   const data = verifier(await sb.from('secretariat_synchro').select('bilan').eq('nom', nom).maybeSingle(), 'Lecture synchro') as { bilan: string } | null;
   return data?.bilan ?? null;
