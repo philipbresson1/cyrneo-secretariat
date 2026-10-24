@@ -105,6 +105,7 @@ export function appliquerEnv(brut: Record<string, unknown>, env: NodeJS.ProcessE
   const test = { ...((brut.test as Record<string, unknown>) ?? {}) };
   if (env.SECRETARIAT_ADRESSE_TEST) test.adresse = env.SECRETARIAT_ADRESSE_TEST.trim();
   if (env.SECRETARIAT_BULLE_TEST) test.bulleRainbow = env.SECRETARIAT_BULLE_TEST.trim();
+  if (env.SECRETARIAT_AGENDA_TEST) test.calendrier = env.SECRETARIAT_AGENDA_TEST.trim();
   sortie.test = test;
   return sortie;
 }
