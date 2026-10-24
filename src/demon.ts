@@ -35,7 +35,9 @@ import { rapprocherPlannings } from './services/planning';
 import { preparerBonsDuLendemain } from './services/veille';
 import { relireFacturesEmises } from './services/contrats';
 import { releverBonsDolibarr, releverDevisDolibarr, repriseBulle, traiterMessageBulle } from './services/appels';
-import { bonParRef, creerBonIntervention, entiteDe, lireBonBrut, listerEntites, verifierDroits } from './services/dolibarr';
+import { dateDuBon, jourFr } from './logique/date-bon';
+import { nomPresent } from './logique/tiers';
+import { bonParRef, creerBonIntervention, creerClient, entiteDe, lireBonBrut, listerEntites, verifierDroits } from './services/dolibarr';
 import { blocRainbow, reconnaitreTiers, synchroDue, synchroniserTiers } from './services/tiers';
 import { envoyerRappels, type BilanRappels } from './services/rappels';
 import { demarrerServeur, type Etat } from './services/serveur';
@@ -391,11 +393,22 @@ async function essaiBon(config: Config, reference: string) {
   const mail = { deAdresse: de?.adresse ?? fiche.client_email, deNom: de?.nom ?? '' } as MailRecu;
   const r = await reconnaitreTiers(config, mail, c);
   console.log(blocRainbow(r));
-  let ligneBon = 'Pas de bon : tiers non reconnu avec certitude (aucun tiers n’est créé automatiquement)';
-  if (r.tiers) {
-    const bon = await creerBonIntervention(config, entite, r.tiers.id, c, reference);
-    await majIntervention(fiche.id, { dolibarr_ref: bon.ref, dolibarr_id: bon.id, dolibarr_entite: entite, dolibarr_tiers_id: r.tiers.id });
-    ligneBon = `Bon ${bon.ref} créé en brouillon\n${config.dolibarr.url}/fichinter/card.php?id=${bon.id}`;
+  // Commande lancée à la main : vaut accord pour cette fiche, quel que soit le mode. Mêmes règles
+  // que le secrétariat : client créé s'il n'existe pas (jamais au nom du syndic), BI daté.
+  let tiersId = r.tiers?.id ?? fiche.dolibarr_tiers_id ?? null;
+  let ligneBon = '';
+  if (fiche.dolibarr_ref) ligneBon = `Bon déjà fait : ${fiche.dolibarr_ref}`;
+  else if (!tiersId && r.possibles.length) ligneBon = `Pas de bon : plusieurs clients possibles (${r.possibles.map((t) => t.nom).join(', ')}), à faire à la main`;
+  else if (!tiersId && (!c.contact.nom || (r.syndic && nomPresent(r.syndic.nom, c.contact.nom)))) ligneBon = 'Pas de bon : nom du client à préciser';
+  else {
+    if (!tiersId) {
+      tiersId = await creerClient(config, entite, c.contact, r.syndic?.id ?? null);
+      console.log(`Client créé dans Dolibarr : ${c.contact.nom} (#${tiersId})`);
+    }
+    const date = fiche.date_prevue ? new Date(fiche.date_prevue) : dateDuBon(c, new Date(fiche.cree_le));
+    const bon = await creerBonIntervention(config, entite, tiersId, c, reference, date);
+    await majIntervention(fiche.id, { dolibarr_ref: bon.ref, dolibarr_id: bon.id, dolibarr_entite: entite, dolibarr_tiers_id: tiersId });
+    ligneBon = `Bon ${bon.ref} créé en brouillon${date ? `, intervention le ${jourFr(date)}` : ''}\n${config.dolibarr.url}/fichinter/card.php?id=${bon.id}`;
   }
   console.log(ligneBon);
   const texte = [
