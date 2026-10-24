@@ -7,8 +7,9 @@
  *    mandat SEPA pré-remplis joints au contrat ;
  *  - mail au bureau (info@ et commercial@) avec le fichier « Relances contrats » (à faire,
  *    conversion, CA potentiel, CA signé, volume), le contrat et le mandat.
- * Rien ne part chez le client : le commercial transmet. Un contrat validé dans Dolibarr compte
- * comme signé. Écritures en mode réel seulement.
+ * Rien ne part chez le client : le commercial transmet. L'outil du site (espace commercial,
+ * signature en ligne) n'est jamais appelé : seule la grille de prix est lue. Un contrat validé
+ * dans Dolibarr compte comme signé. Écritures en mode réel seulement.
  */
 import ExcelJS from 'exceljs';
 import { readFile } from 'node:fs/promises';
@@ -58,7 +59,9 @@ export async function relireFacturesEmises(config: Config, log: Journal, options
   const reel = config.mode === 'reel' && config.dolibarr.actif;
   simulation = [];
   const g = await chargerGrille();
+  // Modèles du bureau : contrat type et mandat séparé (champs {{...}}, voir assets/contrats/LISEZMOI.md).
   const modele = await readFile(path.resolve('assets/contrats/contrat-fosse.docx'));
+  const modeleMandat = await readFile(path.resolve('assets/contrats/mandat.docx')).catch(() => null);
   const bilan: string[] = [];
 
   for (const societe of config.contrats?.societes ?? SOCIETES_CONTRAT) {
@@ -94,7 +97,7 @@ export async function relireFacturesEmises(config: Config, log: Journal, options
   for (const c of await enCours()) {
     if (c.statut !== 'pret') continue;
     try {
-      documents.push(await emettre(config, modele, c, reel, log));
+      documents.push(await emettre(config, modele, modeleMandat, c, reel, log));
     } catch (e) {
       log(`⚠️ Contrat ${c.client_nom} : ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -152,7 +155,7 @@ async function reevaluer(config: Config, g: Grille, c: db.ContratPropose): Promi
 }
 
 /** Contrat Dolibarr en brouillon, contrat type et mandat pré-remplis joints. */
-async function emettre(config: Config, modele: Buffer, c: db.ContratPropose, reel: boolean, log: Journal): Promise<Documents> {
+async function emettre(config: Config, modele: Buffer, modeleMandat: Buffer | null, c: db.ContratPropose, reel: boolean, log: Journal): Promise<Documents> {
   const mensualite = Number(c.mensualite ?? 0);
   const vidange = Number(c.vidange_ttc ?? 0);
   let reference = `Proposition après ${c.facture_ref}`;
@@ -173,7 +176,7 @@ async function emettre(config: Config, modele: Buffer, c: db.ContratPropose, ree
   };
   const nom = c.client_nom.replace(/[^\p{L}\d]+/gu, '-').replace(/^-|-$/g, '').slice(0, 40) || 'client';
   const contrat = contratDocx(modele, d);
-  const mandat = mandatDocx(d);
+  const mandat = mandatDocx(d, modeleMandat);
   const docs: Documents = {
     contrat: { nom: `Contrat-entretien-${nom}.docx`, type: DOCX, taille: contrat.length, contenu: contrat },
     mandat: { nom: `Mandat-SEPA-${nom}.docx`, type: DOCX, taille: mandat.length, contenu: mandat },

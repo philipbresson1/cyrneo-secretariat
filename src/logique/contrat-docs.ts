@@ -66,8 +66,22 @@ export function valeursContrat(d: DonneesContrat): Record<string, string> {
 
 export const contratDocx = (modele: Buffer, d: DonneesContrat) => remplirDocx(modele, valeursContrat(d));
 
-/** Mandat SEPA séparé, pré-rempli (le client complète IBAN, BIC, date et signature). */
-export function mandatDocx(d: DonneesContrat): Buffer {
+/** Champs du mandat type fourni par le bureau (assets/contrats/mandat.docx). */
+export function valeursMandat(d: DonneesContrat): Record<string, string> {
+  return {
+    ...valeursContrat(d),
+    rum: d.rum,
+    mensualite: `${euros(d.mensualite)} TTC`,
+    iban: '',
+    bic: '',
+    date_signature: '',
+  };
+}
+
+/** Mandat SEPA séparé, pré-rempli : le modèle du bureau s'il est fourni, sinon un mandat simple
+ *  (le client complète IBAN, BIC, date et signature). */
+export function mandatDocx(d: DonneesContrat, modele?: Buffer | null): Buffer {
+  if (modele) return remplirDocx(modele, valeursMandat(d));
   const P = (texte: string, o: Omit<Paragraphe, 'texte'> = {}): Paragraphe => ({ texte, ...o });
   return docxSimple([
     P('MANDAT DE PRÉLÈVEMENT SEPA', { gras: true, taille: 16, centre: true, couleur: '232B66' }),
